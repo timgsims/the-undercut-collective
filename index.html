@@ -312,7 +312,7 @@ document.getElementById('legend-race').innerHTML='<span><span style="width:10px;
 <script>
 (function(){
 const chips=[{key:'Limitless',label:'Limitless',bg:'#d9e6f7',tc:'#0C447C',desc:'Unlimited transfers'},{key:'Wildcard',label:'Wildcard',bg:'#efdcd9',tc:'#712B13',desc:'Unlimited changes'},{key:'Final Fix',label:'Final Fix',bg:'#f7e9d9',tc:'#633806',desc:'Post-quali changes'},{key:'Auto Pilot',label:'Auto Pilot',bg:'#d9f3ed',tc:'#085041',desc:'Auto DRS boost'},{key:'No Negative',label:'No Negative',bg:'#e7e0fa',tc:'#3C3489',desc:'No negative pts'},{key:'Extra DRS',label:'Extra DRS',bg:'#e5f1d9',tc:'#27500A',desc:'3x pts booster'}];
-const data={Tim:{team:'Team Ferrari Hopium',color:'#378ADD',pos:1,total:923,races:[243,481,199],podiums:[1,1,1],chips:{Limitless:true,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Stu:{team:'The Anthill Mob',color:'#1D9E75',pos:2,total:891,races:[233,487,171],podiums:[1,1,0],chips:{Limitless:true,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Jaime:{team:'Cadil-lack of Data',color:'#D85A30',pos:3,total:875,races:[214,505,156],podiums:[0,1,0],chips:{Limitless:true,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Lori:{team:'Piastri\'d ma pants',color:'#D4537E',pos:4,total:746,races:[175,328,243],podiums:[0,0,1],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Grayson:{team:'Reigning champppp',color:'#7F77DD',pos:5,total:675,races:[248,270,157],podiums:[1,0,0],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Cain:{team:'Hulken Burgen',color:'#BA7517',pos:6,total:651,races:[163,350,138],podiums:[0,0,0],chips:{Limitless:false,Wildcard:true,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Mark:{team:'Valtteris Moustache Rides',color:'#888780',pos:7,total:553,races:[153,216,184],podiums:[0,0,1],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Dan:{team:'AutoBottas Roll Out',color:'#5DCAA5',pos:8,total:346,races:[-18,222,142],podiums:[0,0,0],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}}};
+const mgrs={Tim:{team:'Team Ferrari Hopium',color:'#378ADD',pos:1,total:923,races:[243,481,199],podiums:[1,1,1],chips:{Limitless:true,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Stu:{team:'The Anthill Mob',color:'#1D9E75',pos:2,total:891,races:[233,487,171],podiums:[1,1,0],chips:{Limitless:true,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Jaime:{team:'Cadil-lack of Data',color:'#D85A30',pos:3,total:875,races:[214,505,156],podiums:[0,1,0],chips:{Limitless:true,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Lori:{team:'Piastri\'d ma pants',color:'#D4537E',pos:4,total:746,races:[175,328,243],podiums:[0,0,1],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Grayson:{team:'Reigning champppp',color:'#7F77DD',pos:5,total:675,races:[248,270,157],podiums:[1,0,0],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Cain:{team:'Hulken Burgen',color:'#BA7517',pos:6,total:651,races:[163,350,138],podiums:[0,0,0],chips:{Limitless:false,Wildcard:true,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Mark:{team:'Valtteris Moustache Rides',color:'#888780',pos:7,total:553,races:[153,216,184],podiums:[0,0,1],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}},Dan:{team:'AutoBottas Roll Out',color:'#5DCAA5',pos:8,total:346,races:[-18,222,142],podiums:[0,0,0],chips:{Limitless:false,Wildcard:false,Final Fix:false,Auto Pilot:false,No Negative:false,Extra DRS:false}}};
 const raceNames=['Australia','China','Japan'];
 const names=['Tim','Stu','Jaime','Lori','Grayson','Cain','Mark','Dan'];
 let chart=null;
@@ -331,7 +331,7 @@ function tickSvg(used,color){
   return`<div class="tick" style="background:#1e1e1e"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4 4l4 4M8 4l-4 4" stroke="#555" stroke-width="1.5" stroke-linecap="round"/></svg></div>`;
 }
 function render(){
-  const nA=selA.value,nB=selB.value,A=data[nA],B=data[nB];
+  const nA=selA.value,nB=selB.value,A=mgrs[nA],B=mgrs[nB];
   const aRW=A.races.filter((r,i)=>r>B.races[i]).length,bRW=B.races.filter((r,i)=>r>A.races[i]).length;
   const aP=A.podiums.reduce((s,v)=>s+v,0),bP=B.podiums.reduce((s,v)=>s+v,0);
   const aL=A.total>=B.total;
@@ -448,7 +448,7 @@ render();
 <div style="position:relative;height:280px"><canvas id="budgetChart"></canvas></div>
 <div class="legend" id="legend-budget"></div>
 <div class="section-label">Budget change per race</div>
-<div style="position:relative;height:300px"><canvas id="changeChart"></canvas></div>
+<div id="changeChartsWrap"></div>
 <script>
 (function(){
 new Chart(document.getElementById('budgetChart'),{
@@ -459,14 +459,40 @@ new Chart(document.getElementById('budgetChart'),{
     scales:{x:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}},
              y:{min:93,max:111,ticks:{color:'#888',callback:v=>v.toFixed(0)+'m'},grid:{color:'rgba(255,255,255,0.06)'}}}}
 });
-new Chart(document.getElementById('changeChart'),{
-  type:'bar',
-  data:{labels:['Australia','China','Japan'],datasets:[{label:'Tim',data:[2.5,2.1,2.9],backgroundColor:'#378ADD',borderWidth:0},{label:'Stu',data:[2.5,2.1,2.9],backgroundColor:'#1D9E75',borderWidth:0},{label:'Jaime',data:[1.9,2.1,1.7],backgroundColor:'#D85A30',borderWidth:0},{label:'Lori',data:[0.1,0.9,1.7],backgroundColor:'#D4537E',borderWidth:0},{label:'Grayson',data:[1.6,1.0,2.4],backgroundColor:'#7F77DD',borderWidth:0},{label:'Cain',data:[0.9,2.4,2.0],backgroundColor:'#BA7517',borderWidth:0},{label:'Mark',data:[-0.3,-2.4,0.0],backgroundColor:'#888780',borderWidth:0},{label:'Dan',data:[-2.2,0.6,2.0],backgroundColor:'#5DCAA5',borderWidth:0}]},
-  options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{const v=ctx.parsed.y;return` ${ctx.dataset.label}: ${v>0?'+':''}${v.toFixed(1)}m`;}}}},
-    scales:{x:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}},
-             y:{ticks:{color:'#888',callback:v=>(v>0?'+':'')+v.toFixed(1)+'m'},grid:{color:'rgba(255,255,255,0.06)'}}}}
-});
+// Budget change per race — 3 races per chart row
+const changeLabels=['Australia','China','Japan'];
+const changeDatasets=[{label:'Tim',data:[2.5,2.1,2.9],backgroundColor:'#378ADD',borderWidth:0},{label:'Stu',data:[2.5,2.1,2.9],backgroundColor:'#1D9E75',borderWidth:0},{label:'Jaime',data:[1.9,2.1,1.7],backgroundColor:'#D85A30',borderWidth:0},{label:'Lori',data:[0.1,0.9,1.7],backgroundColor:'#D4537E',borderWidth:0},{label:'Grayson',data:[1.6,1.0,2.4],backgroundColor:'#7F77DD',borderWidth:0},{label:'Cain',data:[0.9,2.4,2.0],backgroundColor:'#BA7517',borderWidth:0},{label:'Mark',data:[-0.3,-2.4,0.0],backgroundColor:'#888780',borderWidth:0},{label:'Dan',data:[-2.2,0.6,2.0],backgroundColor:'#5DCAA5',borderWidth:0}];
+const wrap=document.getElementById('changeChartsWrap');
+const RACES_PER_ROW=3;
+for(let start=0;start<changeLabels.length;start+=RACES_PER_ROW){
+  const chunk=changeLabels.slice(start,start+RACES_PER_ROW);
+  const chunkData=changeDatasets.map(ds=>({...ds,data:ds.data.slice(start,start+RACES_PER_ROW)})  );
+  const row=document.createElement('div');
+  row.style.cssText='display:grid;grid-template-columns:repeat('+Math.min(chunk.length,RACES_PER_ROW)+',1fr);gap:8px;margin-bottom:10px';
+  chunk.forEach((raceName,i)=>{
+    const cell=document.createElement('div');
+    cell.style.cssText='background:#1a1a1a;border:0.5px solid #2a2a2a;border-radius:8px;padding:10px';
+    const title=document.createElement('div');
+    title.style.cssText='font-size:11px;color:#888;margin-bottom:8px;font-weight:500';
+    title.textContent=raceName;
+    cell.appendChild(title);
+    const canvas=document.createElement('canvas');
+    canvas.style.height='160px';
+    cell.appendChild(canvas);
+    row.appendChild(cell);
+    const raceIdx=start+i;
+    const vals=changeDatasets.map(ds=>ds.data[raceIdx]);
+    const colors=changeDatasets.map(ds=>ds.backgroundColor);
+    const labels=changeDatasets.map(ds=>ds.label);
+    new Chart(canvas,{type:'bar',data:{labels:labels,datasets:[{data:vals,backgroundColor:colors,borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${labels[ctx.dataIndex]}: ${vals[ctx.dataIndex]>0?'+':''}${vals[ctx.dataIndex].toFixed(1)}m`}}},
+        scales:{x:{ticks:{color:'#888',font:{size:9},maxRotation:45},grid:{display:false}},
+                 y:{ticks:{color:'#888',callback:v=>(v>0?'+':'')+v.toFixed(1)+'m',font:{size:9}},grid:{color:'rgba(255,255,255,0.06)'}}}}
+    });
+  });
+  wrap.appendChild(row);
+}
 document.getElementById('legend-budget').innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block"></span>Tim</span><span><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block"></span>Stu</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block"></span>Jaime</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D4537E;display:inline-block"></span>Lori</span><span><span style="width:10px;height:10px;border-radius:2px;background:#7F77DD;display:inline-block"></span>Grayson</span><span><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block"></span>Cain</span><span><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block"></span>Mark</span><span><span style="width:10px;height:10px;border-radius:2px;background:#5DCAA5;display:inline-block"></span>Dan</span>';
 })();
 </script>
@@ -493,9 +519,6 @@ document.getElementById('legend-budget').innerHTML='<span><span style="width:10p
 </div><div class="race-podium" >
   <div class="race-header"><span class="race-title">Japan</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div><div class="slot-name" style="color:#D4537E">Lori</div><div class="slot-pts">243 pts</div></div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div><div class="slot-name" style="color:#378ADD">Tim</div><div class="slot-pts">199 pts</div></div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div><div class="slot-name" style="color:#888780">Mark</div><div class="slot-pts">184 pts</div></div></div></div>
-</div><div class="race-podium" style="border-style:dashed;opacity:0.5">
-  <div class="race-header"><span class="race-title">United States (Miami)</span></div>
-  <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
   <div class="race-header"><span class="race-title">Italy (Imola)</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
@@ -531,6 +554,9 @@ document.getElementById('legend-budget').innerHTML='<span><span style="width:10p
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
   <div class="race-header"><span class="race-title">Singapore</span></div>
+  <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
+</div><div class="race-podium" style="border-style:dashed;opacity:0.5">
+  <div class="race-header"><span class="race-title">Austin</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
   <div class="race-header"><span class="race-title">Mexico</span></div>
@@ -579,10 +605,10 @@ document.getElementById('legend-podiums').innerHTML=`
 <h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Stats · Season overview &amp; highlights</div>
 <div class="metric-grid">
-  <div class="mc"><div class="mc-val">24</div><div class="mc-lbl">Races scored so far</div></div>
+  <div class="mc"><div class="mc-val">3</div><div class="mc-lbl">Races scored so far</div></div>
   <div class="mc"><div class="mc-val">4</div><div class="mc-lbl">Chips used league-wide</div></div>
-  <div class="mc"><div class="mc-val">Mark</div><div class="mc-lbl">Most consistent (P7, P7, P7)</div></div>
-  <div class="mc"><div class="mc-val">Grayson</div><div class="mc-lbl">Biggest swing (3 places)</div></div>
+  <div class="mc"><div class="mc-val">Tim</div><div class="mc-lbl">Most consistent (P2, P3, P2)</div></div>
+  <div class="mc"><div class="mc-val">Jaime</div><div class="mc-lbl">Biggest swing (5 places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
 <div class="card">
@@ -626,7 +652,7 @@ document.getElementById('legend-podiums').innerHTML=`
 <div class="section-label">Chip usage</div>
 <div class="card"><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#d9e6f7;color:#0C447C;font-size:11px;padding:2px 10px">Limitless</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:500;color:#378ADD">Tim</span><span style="font-size:12px;font-weight:500;color:#1D9E75">Stu</span><span style="font-size:12px;font-weight:500;color:#D85A30">Jaime</span></div><span style="font-size:11px;color:#888">3/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#efdcd9;color:#712B13;font-size:11px;padding:2px 10px">Wildcard</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:500;color:#BA7517">Cain</span></div><span style="font-size:11px;color:#888">1/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#f7e9d9;color:#633806;font-size:11px;padding:2px 10px">Final Fix</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#d9f3ed;color:#085041;font-size:11px;padding:2px 10px">Auto Pilot</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#e7e0fa;color:#3C3489;font-size:11px;padding:2px 10px">No Negative</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#e5f1d9;color:#27500A;font-size:11px;padding:2px 10px">Extra DRS</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div></div>
 <div class="section-label">Season highlights</div>
-<div class="hl-grid"><div class="hl-card"><div class="hl-title">Highest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#D85A30"></div><div class="hl-name">Jaime</div><div class="hl-val">505 pts — China</div></div></div><div class="hl-card"><div class="hl-title">Lowest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">-18 pts — Australia</div></div></div><div class="hl-card"><div class="hl-title">Best average per race</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">307.7 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Worst average per race</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">115.3 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Most consistent</div><div class="hl-row"><div class="hl-dot" style="background:#888780"></div><div class="hl-name">Mark</div><div class="hl-val">P7, P7, P7</div></div></div><div class="hl-card"><div class="hl-title">Biggest position swing</div><div class="hl-row"><div class="hl-dot" style="background:#7F77DD"></div><div class="hl-name">Grayson</div><div class="hl-val">3 places</div></div></div></div>
+<div class="hl-grid"><div class="hl-card"><div class="hl-title">Highest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#D85A30"></div><div class="hl-name">Jaime</div><div class="hl-val">505 pts — China</div></div></div><div class="hl-card"><div class="hl-title">Lowest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">-18 pts — Australia</div></div></div><div class="hl-card"><div class="hl-title">Best average per race</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">307.7 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Worst average per race</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">115.3 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Most consistent</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">P2, P3, P2</div></div></div><div class="hl-card"><div class="hl-title">Biggest position swing</div><div class="hl-row"><div class="hl-dot" style="background:#D85A30"></div><div class="hl-name">Jaime</div><div class="hl-val">5 places</div></div></div></div>
     </div>
   </div>
 
