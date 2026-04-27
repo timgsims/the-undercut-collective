@@ -323,7 +323,9 @@ function populateSelect(sel,exclude,cur){
   if(!sel.value)sel.value=sel.options[0].value;
 }
 function syncSelects(changed){if(changed==='A')populateSelect(selB,selA.value,selB.value);else populateSelect(selA,selB.value,selA.value);render();}
-populateSelect(selA,null,names[0]);populateSelect(selB,names[0],names[1]);
+populateSelect(selA,null,names[0]);
+if(names.length>1)populateSelect(selB,names[0],names[1]);
+else populateSelect(selB,null,names[0]);
 function tickSvg(used,color){
   if(used)return`<div class="tick" style="background:${color}22"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`;
   return`<div class="tick" style="background:#1e1e1e"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4 4l4 4M8 4l-4 4" stroke="#555" stroke-width="1.5" stroke-linecap="round"/></svg></div>`;
@@ -492,12 +494,6 @@ document.getElementById('legend-budget').innerHTML='<span><span style="width:10p
   <div class="race-header"><span class="race-title">Japan</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div><div class="slot-name" style="color:#D4537E">Lori</div><div class="slot-pts">243 pts</div></div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div><div class="slot-name" style="color:#378ADD">Tim</div><div class="slot-pts">199 pts</div></div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div><div class="slot-name" style="color:#888780">Mark</div><div class="slot-pts">184 pts</div></div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
-  <div class="race-header"><span class="race-title">Bahrain</span></div>
-  <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
-</div><div class="race-podium" style="border-style:dashed;opacity:0.5">
-  <div class="race-header"><span class="race-title">Saudi Arabia</span></div>
-  <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
-</div><div class="race-podium" style="border-style:dashed;opacity:0.5">
   <div class="race-header"><span class="race-title">United States (Miami)</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
@@ -535,9 +531,6 @@ document.getElementById('legend-budget').innerHTML='<span><span style="width:10p
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
   <div class="race-header"><span class="race-title">Singapore</span></div>
-  <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
-</div><div class="race-podium" style="border-style:dashed;opacity:0.5">
-  <div class="race-header"><span class="race-title">United States (COTA)</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div><div class="race-podium" style="border-style:dashed;opacity:0.5">
   <div class="race-header"><span class="race-title">Mexico</span></div>
@@ -588,8 +581,8 @@ document.getElementById('legend-podiums').innerHTML=`
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">24</div><div class="mc-lbl">Races scored so far</div></div>
   <div class="mc"><div class="mc-val">4</div><div class="mc-lbl">Chips used league-wide</div></div>
-  <div class="mc"><div class="mc-val">Tim</div><div class="mc-lbl">Most consistent (P2, P3, P2)</div></div>
-  <div class="mc"><div class="mc-val">Jaime</div><div class="mc-lbl">Biggest swing (5 places)</div></div>
+  <div class="mc"><div class="mc-val">Mark</div><div class="mc-lbl">Most consistent (P7, P7, P7)</div></div>
+  <div class="mc"><div class="mc-val">Tim</div><div class="mc-lbl">Biggest swing (282 places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
 <div class="card">
@@ -633,7 +626,7 @@ document.getElementById('legend-podiums').innerHTML=`
 <div class="section-label">Chip usage</div>
 <div class="card"><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#d9e6f7;color:#0C447C;font-size:11px;padding:2px 10px">Limitless</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:500;color:#378ADD">Tim</span><span style="font-size:12px;font-weight:500;color:#1D9E75">Stu</span><span style="font-size:12px;font-weight:500;color:#D85A30">Jaime</span></div><span style="font-size:11px;color:#888">3/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#efdcd9;color:#712B13;font-size:11px;padding:2px 10px">Wildcard</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:500;color:#BA7517">Cain</span></div><span style="font-size:11px;color:#888">1/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#f7e9d9;color:#633806;font-size:11px;padding:2px 10px">Final Fix</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#d9f3ed;color:#085041;font-size:11px;padding:2px 10px">Auto Pilot</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#e7e0fa;color:#3C3489;font-size:11px;padding:2px 10px">No Negative</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div><div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #2a2a2a"><span class="chip-pill" style="background:#e5f1d9;color:#27500A;font-size:11px;padding:2px 10px">Extra DRS</span><div style="flex:1;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:12px;color:#555">Not yet used</span></div><span style="font-size:11px;color:#888">0/8 used</span></div></div>
 <div class="section-label">Season highlights</div>
-<div class="hl-grid"><div class="hl-card"><div class="hl-title">Highest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#D85A30"></div><div class="hl-name">Jaime</div><div class="hl-val">505 pts — China</div></div></div><div class="hl-card"><div class="hl-title">Lowest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">-18 pts — Australia</div></div></div><div class="hl-card"><div class="hl-title">Best average per race</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">307.7 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Worst average per race</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">115.3 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Most consistent</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">P2, P3, P2</div></div></div><div class="hl-card"><div class="hl-title">Biggest position swing</div><div class="hl-row"><div class="hl-dot" style="background:#D85A30"></div><div class="hl-name">Jaime</div><div class="hl-val">5 places</div></div></div></div>
+<div class="hl-grid"><div class="hl-card"><div class="hl-title">Highest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#D85A30"></div><div class="hl-name">Jaime</div><div class="hl-val">505 pts — China</div></div></div><div class="hl-card"><div class="hl-title">Lowest single race score</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">-18 pts — Australia</div></div></div><div class="hl-card"><div class="hl-title">Best average per race</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">307.7 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Worst average per race</div><div class="hl-row"><div class="hl-dot" style="background:#5DCAA5"></div><div class="hl-name">Dan</div><div class="hl-val">115.3 pts/race</div></div></div><div class="hl-card"><div class="hl-title">Most consistent</div><div class="hl-row"><div class="hl-dot" style="background:#888780"></div><div class="hl-name">Mark</div><div class="hl-val">P7, P7, P7</div></div></div><div class="hl-card"><div class="hl-title">Biggest position swing</div><div class="hl-row"><div class="hl-dot" style="background:#378ADD"></div><div class="hl-name">Tim</div><div class="hl-val">282 places</div></div></div></div>
     </div>
   </div>
 
@@ -642,56 +635,56 @@ document.getElementById('legend-podiums').innerHTML=`
 <h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Position Changes · How the standings have shifted</div>
 <div class="metric-grid">
-  <div class="mc"><div class="mc-val">4</div><div class="mc-lbl">Positions gained (most — Lori)</div></div>
+  <div class="mc"><div class="mc-val">44</div><div class="mc-lbl">Positions gained (most — Tim)</div></div>
   <div class="mc"><div class="mc-val">4</div><div class="mc-lbl">Positions lost (most — Grayson)</div></div>
-  <div class="mc"><div class="mc-val">0</div><div class="mc-lbl">Managers unchanged</div></div>
+  <div class="mc"><div class="mc-val">2</div><div class="mc-lbl">Managers unchanged</div></div>
   <div class="mc"><div class="mc-val">R3</div><div class="mc-lbl">Most recent race</div></div>
 </div>
 <div class="section-label">Standings movement</div>
 <div class="card">
-  <div style="display:grid;grid-template-columns:26px 1fr 44px 44px 44px 60px;gap:10px;padding:6px 0 2px">
+  <div style="display:grid;grid-template-columns:26px 1fr 40px 40px 40px 64px;gap:10px;padding:6px 0 2px">
     <div></div><div></div><div style="font-size:10px;color:#555;text-align:center">R1</div><div style="font-size:10px;color:#555;text-align:center">R2</div><div style="font-size:10px;color:#555;text-align:center">R3</div><div style="font-size:10px;color:#555;text-align:right">Net</div>
   </div>
   <div class="change-row">
-  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#D4537E"></div></div>
-  <div class="mname">Lori</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#D4537E22;color:#D4537E;border:0.5px solid #D4537E44">P5</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#D4537E22;color:#D4537E;border:0.5px solid #D4537E44">P5</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#D4537E22;color:#D4537E;border:0.5px solid #D4537E44">P1</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+4</span></div>
-</div><div class="change-row">
-  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#378ADD"></div></div>
-  <div class="mname">Tim</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#378ADD22;color:#378ADD;border:0.5px solid #378ADD44">P2</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#378ADD22;color:#378ADD;border:0.5px solid #378ADD44">P3</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#378ADD22;color:#378ADD;border:0.5px solid #378ADD44">P2</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:8px;height:2px;background:#555;margin-right:3px;vertical-align:middle;border-radius:1px"></span><span style="color:#888">—</span></div>
-</div><div class="change-row">
-  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#888780"></div></div>
-  <div class="mname">Mark</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#88878022;color:#888780;border:0.5px solid #88878044">P7</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#88878022;color:#888780;border:0.5px solid #88878044">P8</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#88878022;color:#888780;border:0.5px solid #88878044">P3</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+4</span></div>
-</div><div class="change-row">
   <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#1D9E75"></div></div>
   <div class="mname">Stu</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#1D9E7522;color:#1D9E75;border:0.5px solid #1D9E7544">P3</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#1D9E7522;color:#1D9E75;border:0.5px solid #1D9E7544">P2</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#1D9E7522;color:#1D9E75;border:0.5px solid #1D9E7544">P4</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #E24B4A;margin-right:3px;vertical-align:middle"></span><span style="color:#E24B4A">-1</span></div>
-</div><div class="change-row">
-  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#7F77DD"></div></div>
-  <div class="mname">Grayson</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#7F77DD22;color:#7F77DD;border:0.5px solid #7F77DD44">P1</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#7F77DD22;color:#7F77DD;border:0.5px solid #7F77DD44">P6</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#7F77DD22;color:#7F77DD;border:0.5px solid #7F77DD44">P5</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #E24B4A;margin-right:3px;vertical-align:middle"></span><span style="color:#E24B4A">-4</span></div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#1D9E75;text-align:center;width:40px">P3</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#1D9E75;text-align:center;width:40px">P2</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#1D9E75;text-align:center;width:40px">P2</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+1</span></div>
 </div><div class="change-row">
   <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#D85A30"></div></div>
   <div class="mname">Jaime</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#D85A3022;color:#D85A30;border:0.5px solid #D85A3044">P4</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#D85A3022;color:#D85A30;border:0.5px solid #D85A3044">P1</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#D85A3022;color:#D85A30;border:0.5px solid #D85A3044">P6</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #E24B4A;margin-right:3px;vertical-align:middle"></span><span style="color:#E24B4A">-2</span></div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#D85A30;text-align:center;width:40px">P4</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#D85A30;text-align:center;width:40px">P3</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#D85A30;text-align:center;width:40px">P3</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+1</span></div>
+</div><div class="change-row">
+  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#D4537E"></div></div>
+  <div class="mname">Lori</div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#D4537E;text-align:center;width:40px">P5</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#D4537E;text-align:center;width:40px">P6</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#D4537E;text-align:center;width:40px">P4</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+1</span></div>
+</div><div class="change-row">
+  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#7F77DD"></div></div>
+  <div class="mname">Grayson</div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#7F77DD;text-align:center;width:40px">P1</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#7F77DD;text-align:center;width:40px">P4</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#7F77DD;text-align:center;width:40px">P5</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #E24B4A;margin-right:3px;vertical-align:middle"></span><span style="color:#E24B4A">-4</span></div>
+</div><div class="change-row">
+  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#888780"></div></div>
+  <div class="mname">Mark</div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#888780;text-align:center;width:40px">P7</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#888780;text-align:center;width:40px">P7</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#888780;text-align:center;width:40px">P7</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:8px;height:2px;background:#555;margin-right:3px;vertical-align:middle;border-radius:1px"></span><span style="color:#888">—</span></div>
 </div><div class="change-row">
   <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#5DCAA5"></div></div>
   <div class="mname">Dan</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#5DCAA522;color:#5DCAA5;border:0.5px solid #5DCAA544">P8</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#5DCAA522;color:#5DCAA5;border:0.5px solid #5DCAA544">P7</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#5DCAA522;color:#5DCAA5;border:0.5px solid #5DCAA544">P7</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+1</span></div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#5DCAA5;text-align:center;width:40px">P8</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#5DCAA5;text-align:center;width:40px">P8</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#5DCAA5;text-align:center;width:40px">P8</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:8px;height:2px;background:#555;margin-right:3px;vertical-align:middle;border-radius:1px"></span><span style="color:#888">—</span></div>
 </div><div class="change-row">
   <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#BA7517"></div></div>
   <div class="mname">Cain</div>
-  <div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#BA751722;color:#BA7517;border:0.5px solid #BA751744">P6</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#BA751722;color:#BA7517;border:0.5px solid #BA751744">P4</div></div><div style="display:flex;justify-content:center"><div class="pos-badge" style="background:#BA751722;color:#BA7517;border:0.5px solid #BA751744">P8</div></div>
-  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #E24B4A;margin-right:3px;vertical-align:middle"></span><span style="color:#E24B4A">-2</span></div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#BA7517;text-align:center;width:40px">P163</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#BA7517;text-align:center;width:40px">P350</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#BA7517;text-align:center;width:40px">P138</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+25</span></div>
+</div><div class="change-row">
+  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:#378ADD"></div></div>
+  <div class="mname">Tim</div>
+  <div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#378ADD;text-align:center;width:40px">P243</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#378ADD;text-align:center;width:40px">P481</div></div><div style="display:flex;justify-content:center"><div style="font-size:13px;font-weight:500;color:#378ADD;text-align:center;width:40px">P199</div></div>
+  <div class="net-badge"><span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span><span style="color:#1D9E75">+44</span></div>
 </div>
 </div>
 <div class="section-label">Position timeline</div>
@@ -701,7 +694,7 @@ document.getElementById('legend-podiums').innerHTML=`
 (function(){
 new Chart(document.getElementById('posChart'),{
   type:'line',
-  data:{labels:['Australia','China','Japan'],datasets:[{label:'Tim',data:[2,3,2],borderColor:'#378ADD',borderDash:[],borderWidth:2.5,pointBackgroundColor:'#378ADD',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Stu',data:[3,2,4],borderColor:'#1D9E75',borderDash:[6,2],borderWidth:2.5,pointBackgroundColor:'#1D9E75',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Jaime',data:[4,1,6],borderColor:'#D85A30',borderDash:[2,2],borderWidth:2.5,pointBackgroundColor:'#D85A30',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Lori',data:[5,5,1],borderColor:'#D4537E',borderDash:[8,3],borderWidth:2.5,pointBackgroundColor:'#D4537E',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Grayson',data:[1,6,5],borderColor:'#7F77DD',borderDash:[4,2],borderWidth:2.5,pointBackgroundColor:'#7F77DD',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Cain',data:[6,4,8],borderColor:'#BA7517',borderDash:[6,2,2,2],borderWidth:2.5,pointBackgroundColor:'#BA7517',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Mark',data:[7,8,3],borderColor:'#888780',borderDash:[3,3],borderWidth:2.5,pointBackgroundColor:'#888780',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Dan',data:[8,7,7],borderColor:'#5DCAA5',borderDash:[8,2,2,2],borderWidth:2.5,pointBackgroundColor:'#5DCAA5',pointRadius:6,pointHoverRadius:8,fill:false,tension:0}]},
+  data:{labels:['Australia','China','Japan'],datasets:[{label:'Tim',data:[243,481,199],borderColor:'#378ADD',borderDash:[],borderWidth:2.5,pointBackgroundColor:'#378ADD',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Stu',data:[3,2,2],borderColor:'#1D9E75',borderDash:[6,2],borderWidth:2.5,pointBackgroundColor:'#1D9E75',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Jaime',data:[4,3,3],borderColor:'#D85A30',borderDash:[2,2],borderWidth:2.5,pointBackgroundColor:'#D85A30',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Lori',data:[5,6,4],borderColor:'#D4537E',borderDash:[8,3],borderWidth:2.5,pointBackgroundColor:'#D4537E',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Grayson',data:[1,4,5],borderColor:'#7F77DD',borderDash:[4,2],borderWidth:2.5,pointBackgroundColor:'#7F77DD',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Cain',data:[163,350,138],borderColor:'#BA7517',borderDash:[6,2,2,2],borderWidth:2.5,pointBackgroundColor:'#BA7517',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Mark',data:[7,7,7],borderColor:'#888780',borderDash:[3,3],borderWidth:2.5,pointBackgroundColor:'#888780',pointRadius:6,pointHoverRadius:8,fill:false,tension:0},{label:'Dan',data:[8,8,8],borderColor:'#5DCAA5',borderDash:[8,2,2,2],borderWidth:2.5,pointBackgroundColor:'#5DCAA5',pointRadius:6,pointHoverRadius:8,fill:false,tension:0}]},
   options:{responsive:true,maintainAspectRatio:false,
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: P${ctx.parsed.y}`}}},
     scales:{
@@ -746,7 +739,8 @@ function showRace(rname){
   const prev=teamSel.value;
   teamSel.innerHTML='';
   teams.forEach(t=>{const o=document.createElement('option');o.value=t.name;o.textContent=t.name+' — '+t.teamName;if(t.name===prev)o.selected=true;teamSel.appendChild(o);});
-  showTeam(rname, teamSel.value);
+  if(teams.length>0) showTeam(rname, teamSel.value);
+  else document.getElementById('team-display').innerHTML='<div style="padding:1rem;color:#555;font-size:13px">No lineup data for this race yet.</div>';
 }
 function showTeam(rname, name){
   const teams=teamsByRace[rname]||[];
