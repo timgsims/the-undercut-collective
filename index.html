@@ -38,6 +38,15 @@
   .chip-pill { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 20px; font-weight: 500; margin-left: 4px; }
   .bar-bg { height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 5px; }
   .bar-fill { height: 100%; border-radius: 2px; }
+  /* scrollable wrappers for wide tables */
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* mobile */
+  @media (max-width: 600px) {
+    .panel-body { padding: 1rem; }
+    .metric-grid { grid-template-columns: repeat(2,1fr); }
+    .hl-grid { grid-template-columns: 1fr !important; }
+    .mc-val { font-size: 16px; }
+  }
   /* leaderboard */
   .podium-row { display: flex; gap: 6px; margin-bottom: 1.5rem; }
   .podium-card { flex: 1; background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 8px; padding: 10px 12px; }
@@ -100,7 +109,7 @@
   .podium-slots { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
   .tbd { font-size: 12px; color: #555; font-style: italic; }
   /* stats */
-  .srow { display: grid; grid-template-columns: 26px 1fr repeat(9,26px) 36px; align-items: center; gap: 5px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; }
+  .srow { display: grid; grid-template-columns: 26px minmax(70px,1fr) repeat(9,26px) 36px; align-items: center; gap: 5px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; min-width: 420px; }
   .srow:last-child { border-bottom: none; }
   .sname { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fin { width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; }
@@ -176,25 +185,25 @@
 <div class="section-label">Standings</div>
 <div class="card"><div class="row">
   <div class="pos-badge" style="background:#FFD700;color:#7a5800">1</div>
-  <div><div class="manager-name">Tim<span class="chip-pill" style="background:#1a3a5c;color:#60aaff;font-size:10px;padding:1px 7px">Limitless</span></div><div class="team-name">Team Ferrari Hopium</div>
+  <div><div class="manager-name">Tim</div><div style="margin-top:2px"><span class="chip-pill" style="background:#1a3a5c;color:#60aaff;font-size:10px;padding:1px 7px">Limitless</span></div><div class="team-name">Team Ferrari Hopium</div>
   <div class="bar-bg"><div class="bar-fill" style="width:100.0%;background:#378ADD"></div></div></div>
   <div class="gap-col">Leader</div>
   <div class="pts-col">923</div>
 </div><div class="row">
   <div class="pos-badge" style="background:#C0C0C0;color:#4a4a4a">2</div>
-  <div><div class="manager-name">Stu<span class="chip-pill" style="background:#1a3a5c;color:#60aaff;font-size:10px;padding:1px 7px">Limitless</span></div><div class="team-name">The Anthill Mob</div>
+  <div><div class="manager-name">Stu</div><div style="margin-top:2px"><span class="chip-pill" style="background:#1a3a5c;color:#60aaff;font-size:10px;padding:1px 7px">Limitless</span></div><div class="team-name">The Anthill Mob</div>
   <div class="bar-bg"><div class="bar-fill" style="width:96.5%;background:#1D9E75"></div></div></div>
   <div class="gap-col">-32</div>
   <div class="pts-col">891</div>
 </div><div class="row">
   <div class="pos-badge" style="background:#CD7F32;color:#5a2d00">3</div>
-  <div><div class="manager-name">Jaime<span class="chip-pill" style="background:#1a3a5c;color:#60aaff;font-size:10px;padding:1px 7px">Limitless</span></div><div class="team-name">Cadil-lack of Data</div>
+  <div><div class="manager-name">Jaime</div><div style="margin-top:2px"><span class="chip-pill" style="background:#1a3a5c;color:#60aaff;font-size:10px;padding:1px 7px">Limitless</span></div><div class="team-name">Cadil-lack of Data</div>
   <div class="bar-bg"><div class="bar-fill" style="width:94.8%;background:#D85A30"></div></div></div>
   <div class="gap-col">-48</div>
   <div class="pts-col">875</div>
 </div><div class="row">
   <div class="pos-badge" style="background:#2a2a2a;color:#888">4</div>
-  <div><div class="manager-name">Lori<span class="chip-pill" style="background:#1a3010;color:#88dd44;font-size:10px;padding:1px 7px">Extra DRS</span></div><div class="team-name">Piastri'd ma pants</div>
+  <div><div class="manager-name">Lori</div><div style="margin-top:2px"><span class="chip-pill" style="background:#1a3010;color:#88dd44;font-size:10px;padding:1px 7px">Extra DRS</span></div><div class="team-name">Piastri'd ma pants</div>
   <div class="bar-bg"><div class="bar-fill" style="width:80.8%;background:#D4537E"></div></div></div>
   <div class="gap-col">-177</div>
   <div class="pts-col">746</div>
@@ -206,7 +215,7 @@
   <div class="pts-col">675</div>
 </div><div class="row">
   <div class="pos-badge" style="background:#2a2a2a;color:#888">6</div>
-  <div><div class="manager-name">Cain<span class="chip-pill" style="background:#4a1a12;color:#ff7a5a;font-size:10px;padding:1px 7px">Wildcard</span></div><div class="team-name">Hulken Burgen</div>
+  <div><div class="manager-name">Cain</div><div style="margin-top:2px"><span class="chip-pill" style="background:#4a1a12;color:#ff7a5a;font-size:10px;padding:1px 7px">Wildcard</span></div><div class="team-name">Hulken Burgen</div>
   <div class="bar-bg"><div class="bar-fill" style="width:70.5%;background:#BA7517"></div></div></div>
   <div class="gap-col">-272</div>
   <div class="pts-col">651</div>
@@ -561,6 +570,29 @@ document.getElementById('legend-budget').innerHTML='<span><span style="width:10p
   <div class="mc"><div class="mc-val">3</div><div class="mc-lbl">Different race winners</div></div>
   <div class="mc"><div class="mc-val">2</div><div class="mc-lbl">Managers without a podium</div></div>
 </div>
+<div class="section-label">Podium share</div>
+<div style="position:relative;height:260px"><canvas id="podiumChart"></canvas></div>
+<div class="legend" id="legend-podiums"></div>
+<script>
+(function(){
+new Chart(document.getElementById('podiumChart'),{
+  type:'bar',
+  data:{labels:['Tim','Stu','Jaime','Lori','Grayson','Cain','Mark','Dan'],datasets:[
+    {label:'1st',data:[0,0,1,1,1,0,0,0],backgroundColor:'#FFD700',borderWidth:0},
+    {label:'2nd',data:[2,1,0,0,0,0,0,0],backgroundColor:'#C0C0C0',borderWidth:0},
+    {label:'3rd',data:[1,1,0,0,0,0,1,0],backgroundColor:'#CD7F32',borderWidth:0}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}`}}},
+    scales:{x:{stacked:true,ticks:{color:'#888'},grid:{display:false}},
+             y:{stacked:true,max:3,ticks:{color:'#888',stepSize:1},grid:{color:'rgba(255,255,255,0.06)'}}}}
+});
+document.getElementById('legend-podiums').innerHTML=`
+  <span><span style="width:10px;height:10px;border-radius:2px;background:#FFD700;display:inline-block"></span>1st place</span>
+  <span><span style="width:10px;height:10px;border-radius:2px;background:#C0C0C0;display:inline-block"></span>2nd place</span>
+  <span><span style="width:10px;height:10px;border-radius:2px;background:#CD7F32;display:inline-block"></span>3rd place</span>`;
+})();
+</script>
 <div class="section-label">Race results</div>
 <div class="race-podium" >
   <div class="race-header"><span class="race-title">Australia</span></div>
@@ -629,29 +661,6 @@ document.getElementById('legend-budget').innerHTML='<span><span style="width:10p
   <div class="race-header"><span class="race-title">Abu Dhabi</span></div>
   <div class="podium-slots"><div class="slot" style="background:#2a2200;border:0.5px solid #FFD700"><div class="medal" style="background:#FFD700;color:#7a5800">1</div><div class="tbd">TBC</div></div><div class="slot" style="background:#222;border:0.5px solid #C0C0C0"><div class="medal" style="background:#C0C0C0;color:#4a4a4a">2</div><div class="tbd">TBC</div></div><div class="slot" style="background:#221a12;border:0.5px solid #CD7F32"><div class="medal" style="background:#CD7F32;color:#5a2d00">3</div><div class="tbd">TBC</div></div></div>
 </div>
-<div class="section-label">Podium share</div>
-<div style="position:relative;height:260px"><canvas id="podiumChart"></canvas></div>
-<div class="legend" id="legend-podiums"></div>
-<script>
-(function(){
-new Chart(document.getElementById('podiumChart'),{
-  type:'bar',
-  data:{labels:['Tim','Stu','Jaime','Lori','Grayson','Cain','Mark','Dan'],datasets:[
-    {label:'1st',data:[0,0,1,1,1,0,0,0],backgroundColor:'#FFD700',borderWidth:0},
-    {label:'2nd',data:[2,1,0,0,0,0,0,0],backgroundColor:'#C0C0C0',borderWidth:0},
-    {label:'3rd',data:[1,1,0,0,0,0,1,0],backgroundColor:'#CD7F32',borderWidth:0}
-  ]},
-  options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y}`}}},
-    scales:{x:{stacked:true,ticks:{color:'#888'},grid:{display:false}},
-             y:{stacked:true,max:3,ticks:{color:'#888',stepSize:1},grid:{color:'rgba(255,255,255,0.06)'}}}}
-});
-document.getElementById('legend-podiums').innerHTML=`
-  <span><span style="width:10px;height:10px;border-radius:2px;background:#FFD700;display:inline-block"></span>1st place</span>
-  <span><span style="width:10px;height:10px;border-radius:2px;background:#C0C0C0;display:inline-block"></span>2nd place</span>
-  <span><span style="width:10px;height:10px;border-radius:2px;background:#CD7F32;display:inline-block"></span>3rd place</span>`;
-})();
-</script>
     </div>
   </div>
 
@@ -666,8 +675,8 @@ document.getElementById('legend-podiums').innerHTML=`
   <div class="mc"><div class="mc-val">Grayson</div><div class="mc-lbl">Biggest swing (3 places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
-<div class="card">
-  <div style="display:grid;grid-template-columns:26px 1fr repeat(9,26px) 36px;gap:5px;padding:6px 0 2px">
+<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <div style="display:grid;grid-template-columns:26px minmax(70px,1fr) repeat(9,26px) 36px;gap:5px;padding:6px 0 2px;min-width:420px">
     <div></div><div></div><div style="font-size:9px;color:#555;text-align:center">P1</div><div style="font-size:9px;color:#555;text-align:center">P2</div><div style="font-size:9px;color:#555;text-align:center">P3</div><div style="font-size:9px;color:#555;text-align:center">P4</div><div style="font-size:9px;color:#555;text-align:center">P5</div><div style="font-size:9px;color:#555;text-align:center">P6</div><div style="font-size:9px;color:#555;text-align:center">P7</div><div style="font-size:9px;color:#555;text-align:center">P8</div><div style="font-size:9px;color:#555;text-align:center">P9</div><div style="font-size:9px;color:#555;text-align:right">Pts</div>
   </div>
   <div class="srow">
@@ -722,50 +731,50 @@ document.getElementById('legend-podiums').innerHTML=`
   <div class="mc"><div class="mc-val">R3</div><div class="mc-lbl">Most recent race</div></div>
 </div>
 <div class="section-label">Standings movement</div>
-<div class="card" style="padding:4px 16px">
-  <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div class="card" style="padding:4px 16px">
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#378ADD;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Tim</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #378ADD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#378ADD">P2</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #378ADD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#378ADD">P1</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#378ADD;border:1.5px solid #378ADD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P1</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Tim</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #378ADD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#378ADD">P2</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #378ADD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#378ADD">P1</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#378ADD;border:1.5px solid #378ADD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P1</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#1D9E75;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Stu</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #1D9E75;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#1D9E75">P3</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #1D9E75;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#1D9E75">P2</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#1D9E75;border:1.5px solid #1D9E75;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P2</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Stu</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #1D9E75;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#1D9E75">P3</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #1D9E75;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#1D9E75">P2</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#1D9E75;border:1.5px solid #1D9E75;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P2</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#D85A30;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Jaime</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D85A30;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D85A30">P4</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D85A30;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D85A30">P3</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#D85A30;border:1.5px solid #D85A30;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P3</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Jaime</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D85A30;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D85A30">P4</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D85A30;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D85A30">P3</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#D85A30;border:1.5px solid #D85A30;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P3</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#D4537E;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Lori</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D4537E;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D4537E">P5</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D4537E;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D4537E">P6</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#D4537E;border:1.5px solid #D4537E;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P4</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Lori</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D4537E;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D4537E">P5</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #D4537E;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#D4537E">P6</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#D4537E;border:1.5px solid #D4537E;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P4</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +1</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#7F77DD;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Grayson</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #7F77DD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#7F77DD">P1</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #7F77DD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#7F77DD">P4</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#7F77DD;border:1.5px solid #7F77DD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P5</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#E24B4A;font-size:13px;font-weight:600">▼ -4</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Grayson</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #7F77DD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#7F77DD">P1</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #7F77DD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#7F77DD">P4</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#7F77DD;border:1.5px solid #7F77DD;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P5</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#E24B4A;font-size:13px;font-weight:600">▼ -4</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#BA7517;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Cain</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #BA7517;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#BA7517">P6</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #BA7517;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#BA7517">P5</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#BA7517;border:1.5px solid #BA7517;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P6</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#555;font-size:13px;font-weight:500">— 0</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Cain</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #BA7517;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#BA7517">P6</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #BA7517;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#BA7517">P5</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#BA7517;border:1.5px solid #BA7517;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P6</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#555;font-size:13px;font-weight:500">— 0</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#888780;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Mark</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #888780;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#888780">P7</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #888780;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#888780">P7</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#888780;border:1.5px solid #888780;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P7</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#555;font-size:13px;font-weight:500">— 0</span></div>
-</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Mark</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #888780;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#888780">P7</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #888780;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#888780">P7</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#888780;border:1.5px solid #888780;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P7</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#555;font-size:13px;font-weight:500">— 0</span></div>
+</div><div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,262px)">
   <div style="width:10px;height:10px;border-radius:50%;background:#5DCAA5;flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500">Dan</div>
-  <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #5DCAA5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#5DCAA5">P8</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #5DCAA5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#5DCAA5">P8</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#5DCAA5;border:1.5px solid #5DCAA5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P8</div></div></div>
-  <div style="min-width:48px;text-align:right"><span style="color:#555;font-size:13px;font-weight:500">— 0</span></div>
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">Dan</div>
+  <div style="display:flex;gap:6px;flex:1"><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R1</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #5DCAA5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#5DCAA5">P8</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R2</div><div style="width:28px;height:28px;border-radius:6px;background:#1e1e1e;border:1.5px solid #5DCAA5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#5DCAA5">P8</div></div><div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:9px;color:#555">R3</div><div style="width:28px;height:28px;border-radius:6px;background:#5DCAA5;border:1.5px solid #5DCAA5;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#0f0f0f">P8</div></div></div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0"><span style="color:#555;font-size:13px;font-weight:500">— 0</span></div>
 </div>
   <div style="border-bottom:none;padding-bottom:4px"></div>
-</div>
+</div></div>
 <div class="hint" style="margin-bottom:1.5rem">Filled badge = current position. Numbers show overall standings after each race.</div>
 <div class="section-label">Position timeline</div>
 <div style="position:relative;height:360px"><canvas id="posChart"></canvas></div>
