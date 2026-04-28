@@ -282,7 +282,7 @@ leg.innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;backg
   <div><span class="tag">Range: 105 pts</span><span class="tag">Avg: 174 pts</span><span class="tag">Everyone positive</span></div>
 </div>
 <div class="section-label">Points per race — all managers</div>
-<div style="position:relative;height:300px;overflow:hidden">
+<div style="position:relative;height:300px">
   <div id="barChartYAxis" style="position:absolute;top:0;left:0;width:48px;height:100%;z-index:2;background:#0f0f0f;pointer-events:none"></div>
   <div id="barChartScroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;height:100%;padding-left:48px;box-sizing:border-box">
     <div style="position:relative;height:100%;min-width:400px">
@@ -294,19 +294,17 @@ leg.innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;backg
 <script>
 (function(){
 const nRaces=3;
-const minW=Math.max(nRaces*90,400);
 const chart=new Chart(document.getElementById('barChart'),{
   type:'bar',
   data:{labels:['Australia','China','Japan'],datasets:[{"label":'Tim',"data":[243,481,199],"backgroundColor":'#378ADD',"borderWidth":0},{"label":'Stu',"data":[233,487,171],"backgroundColor":'#1D9E75',"borderWidth":0},{"label":'Jaime',"data":[214,505,156],"backgroundColor":'#D85A30',"borderWidth":0},{"label":'Lori',"data":[175,328,243],"backgroundColor":'#D4537E',"borderWidth":0},{"label":'Grayson',"data":[248,270,157],"backgroundColor":'#7F77DD',"borderWidth":0},{"label":'Cain',"data":[163,350,138],"backgroundColor":'#BA7517',"borderWidth":0},{"label":'Mark',"data":[153,216,184],"backgroundColor":'#888780',"borderWidth":0},{"label":'Dan',"data":[-18,222,142],"backgroundColor":'#5DCAA5',"borderWidth":0}]},
   options:{responsive:true,maintainAspectRatio:false,
-    layout:{padding:{left:0}},
+    layout:{padding:{top:10,left:0}},
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y} pts`}}},
     scales:{
       x:{ticks:{color:'#888',maxRotation:30},grid:{color:'rgba(255,255,255,0.06)'}},
       y:{ticks:{color:'#888',display:false},grid:{color:'rgba(255,255,255,0.06)'},border:{display:false}}
     }}
 });
-// After render, clone y-axis onto the frozen overlay
 function freezeYAxis(){
   const yAxis=document.getElementById('barChartYAxis');
   const cvs=document.getElementById('barChart');
@@ -314,17 +312,15 @@ function freezeYAxis(){
   if(!scale)return;
   const dpr=window.devicePixelRatio||1;
   const cssH=cvs.clientHeight||300;
-  const extraTop=10;
   const fc=document.createElement('canvas');
-  fc.width=48*dpr; fc.height=(cssH+extraTop)*dpr;
-  fc.style.width='48px'; fc.style.height=(cssH+extraTop)+'px';
-  fc.style.marginTop=(-extraTop)+'px';
+  fc.width=48*dpr; fc.height=cssH*dpr;
+  fc.style.width='48px'; fc.style.height=cssH+'px';
   const ctx2=fc.getContext('2d');
   ctx2.scale(dpr,dpr);
   ctx2.fillStyle='#0f0f0f';
-  ctx2.fillRect(0,0,48,cssH+extraTop);
+  ctx2.fillRect(0,0,48,cssH);
   const ticks=scale.ticks;
-  const top=scale.top+extraTop; const bottom=scale.bottom+extraTop;
+  const top=scale.top; const bottom=scale.bottom;
   const range=bottom-top;
   const vMin=scale.min; const vMax=scale.max;
   ticks.forEach(t=>{
