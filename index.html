@@ -552,7 +552,7 @@ new Chart(document.getElementById('budgetChart'),{
   options:{responsive:true,maintainAspectRatio:false,
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}m`}}},
     scales:{x:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}},
-             y:{min:93,max:111,ticks:{color:'#888',callback:v=>v.toFixed(0)+'m'},grid:{color:'rgba(255,255,255,0.06)'}}}}
+             y:{min:94,max:110,ticks:{color:'#888',callback:v=>v.toFixed(0)+'m'},grid:{color:'rgba(255,255,255,0.06)'}}}}
 });
 document.getElementById('legend-budget').innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block"></span>Tim</span><span><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block"></span>Stu</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block"></span>Jaime</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D4537E;display:inline-block"></span>Lori</span><span><span style="width:10px;height:10px;border-radius:2px;background:#7F77DD;display:inline-block"></span>Grayson</span><span><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block"></span>Cain</span><span><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block"></span>Mark</span><span><span style="width:10px;height:10px;border-radius:2px;background:#5DCAA5;display:inline-block"></span>Dan</span>';
 })();
@@ -789,7 +789,7 @@ new Chart(document.getElementById('posChart'),{
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: P${ctx.parsed.y}`}}},
     scales:{
       x:{ticks:{color:'#888',font:{size:12}},grid:{color:'rgba(255,255,255,0.06)'}},
-      y:{reverse:true,min:0.5,max:8+0.5,ticks:{color:'#888',stepSize:1,callback:v=>Number.isInteger(v)?'P'+v:''},grid:{color:'rgba(255,255,255,0.06)'}}
+      y:{reverse:true,min:0.5,max:8+0.5,ticks:{color:'#888',stepSize:1,callback:v=>v%1===0?'P'+v:''},grid:{color:'rgba(255,255,255,0.06)'}}
     }}
 });
 document.getElementById('legend-positions').innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block;flex-shrink:0"></span>Tim</span><span><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block;flex-shrink:0"></span>Stu</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block;flex-shrink:0"></span>Jaime</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D4537E;display:inline-block;flex-shrink:0"></span>Lori</span><span><span style="width:10px;height:10px;border-radius:2px;background:#7F77DD;display:inline-block;flex-shrink:0"></span>Grayson</span><span><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block;flex-shrink:0"></span>Cain</span><span><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block;flex-shrink:0"></span>Mark</span><span><span style="width:10px;height:10px;border-radius:2px;background:#5DCAA5;display:inline-block;flex-shrink:0"></span>Dan</span>';
