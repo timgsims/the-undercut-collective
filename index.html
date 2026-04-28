@@ -314,15 +314,17 @@ function freezeYAxis(){
   if(!scale)return;
   const dpr=window.devicePixelRatio||1;
   const cssH=cvs.clientHeight||300;
+  const extraTop=10;
   const fc=document.createElement('canvas');
-  fc.width=48*dpr; fc.height=cssH*dpr;
-  fc.style.width='48px'; fc.style.height=cssH+'px';
+  fc.width=48*dpr; fc.height=(cssH+extraTop)*dpr;
+  fc.style.width='48px'; fc.style.height=(cssH+extraTop)+'px';
+  fc.style.marginTop=(-extraTop)+'px';
   const ctx2=fc.getContext('2d');
   ctx2.scale(dpr,dpr);
   ctx2.fillStyle='#0f0f0f';
-  ctx2.fillRect(0,0,48,cssH);
+  ctx2.fillRect(0,0,48,cssH+extraTop);
   const ticks=scale.ticks;
-  const top=scale.top; const bottom=scale.bottom;
+  const top=scale.top+extraTop; const bottom=scale.bottom+extraTop;
   const range=bottom-top;
   const vMin=scale.min; const vMax=scale.max;
   ticks.forEach(t=>{
