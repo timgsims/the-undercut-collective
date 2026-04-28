@@ -192,7 +192,7 @@
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">2026 Season · 3/22 races · Last: Japan · Updated 28 Apr 2026, 7:49 pm NZT</span>
+      <span class="header-badge">2026 Season · 3/22 races · Last: Japan · Updated 28 Apr 2026, 8:11 pm NZT</span>
     </div>
     <nav class="tab-nav">
       <button class="tab-btn active" id="tab-leaderboard" onclick="showTab('leaderboard')">🏁 Leaderboard</button>
@@ -894,7 +894,7 @@ document.getElementById('legend-positions').innerHTML='<span><span style="width:
 <div class="section-label">Lineup viewer</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
   <label style="font-size:13px">Race</label>
-  <select id="raceSel" onchange="ucPicksRace(this.value)"><option value="Australia">Australia</option><option value="China">China</option><option value="Japan">Japan</option></select>
+  <select id="raceSel" onchange="ucPicksRace(this.value)"><option value="Australia">Australia</option><option value="China">China</option><option value="Japan" selected>Japan</option></select>
   <label style="font-size:13px;margin-left:12px">Manager</label>
   <select id="teamSel" onchange="ucPicksTeam(raceSel.value, this.value)"></select>
 </div>
@@ -917,7 +917,7 @@ document.getElementById('legend-positions').innerHTML='<span><span style="width:
 <div class="hint" style="margin-bottom:12px">Which managers made moves between races. Wildcard and Limitless weekends are flagged.</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
   <label style="font-size:13px">Into race</label>
-  <select id="tradeRaceSel"><option value="China">China</option><option value="Japan">Japan</option></select>
+  <select id="tradeRaceSel"><option value="China">China</option><option value="Japan" selected>Japan</option></select>
 </div>
 <div id="picks-trades-display"></div>
 
@@ -943,6 +943,7 @@ const popByRace={"Australia":{"drivers":[{"name":'C. Leclerc',"count":5,"pts":29
 const tradesByRace={"China":[{"name":'Cain',"color":'#BA7517',"team":'Hulken Burgen',"wildcard":true,"trades":[{"out":'C. Leclerc',"in":'G. Russell',"isCon":false},{"out":'G. Bortoletto',"in":'I. Hadjaar',"isCon":false},{"out":'V. Bottas',"in":'O. Bearman',"isCon":false},{"out":'Ferrari',"in":'Mercedes',"isCon":true},{"out":'McLaren',"in":'Racing Bulls',"isCon":true}],"tradeCount":5},{"name":'Dan',"color":'#5DCAA5',"team":'AutoBottas Roll Out',"wildcard":false,"trades":[{"out":'O. Piastri',"in":'C. Leclerc',"isCon":false},{"out":'Audi',"in":'Haas',"isCon":true}],"tradeCount":2},{"name":'Mark',"color":'#888780',"team":'Valtteris Moustache Rides',"wildcard":false,"trades":[{"out":'C. Leclerc',"in":'I. Hadjaar',"isCon":false},{"out":'Ferrari',"in":'Mercedes',"isCon":true}],"tradeCount":2}],"Japan":[{"name":'Cain',"color":'#BA7517',"team":'Hulken Burgen',"wildcard":false,"trades":[{"out":'I. Hadjaar',"in":'A. Albon',"isCon":false},{"out":'Racing Bulls',"in":'Haas',"isCon":true}],"tradeCount":2},{"name":'Dan',"color":'#5DCAA5',"team":'AutoBottas Roll Out',"wildcard":false,"trades":[{"out":'V. Bottas',"in":'O. Bearman',"isCon":false},{"out":'McLaren',"in":'Ferrari',"isCon":true}],"tradeCount":2},{"name":'Grayson',"color":'#7F77DD',"team":'Reigning champppp',"wildcard":false,"trades":[{"out":'G. Bortoletto',"in":'E. Ocon',"isCon":false},{"out":'M. Verstappen',"in":'G. Russell',"isCon":false}],"tradeCount":2},{"name":'Mark',"color":'#888780',"team":'Valtteris Moustache Rides',"wildcard":false,"trades":[{"out":'N. Hulkenberg',"in":'L. Lawson',"isCon":false},{"out":'Audi',"in":'Racing Bulls',"isCon":true}],"tradeCount":2}]};
 const drsStats=[{"name":'Tim',"color":'#378ADD',"races":[{"race":'Australia',"pick":'G. Russell',"pts":78,"marker":'2X',"otherAvg":27.5},{"race":'China',"pick":'G. Russell',"pts":90,"marker":'2X',"otherAvg":65.2},{"race":'Japan',"pick":'K. Antonelli',"pts":100,"marker":'2X',"otherAvg":16.5}],"hitRate":100,"avgPts":89.3,"count":3},{"name":'Jaime',"color":'#D85A30',"races":[{"race":'Australia',"pick":'G. Russell',"pts":78,"marker":'2X',"otherAvg":22.7},{"race":'China',"pick":'G. Russell',"pts":90,"marker":'2X',"otherAvg":69.2},{"race":'Japan',"pick":'G. Russell',"pts":54,"marker":'2X',"otherAvg":17.0}],"hitRate":100,"avgPts":74.0,"count":3},{"name":'Mark',"color":'#888780',"races":[{"race":'Australia',"pick":'G. Russell',"pts":78,"marker":'2X',"otherAvg":12.5},{"race":'China',"pick":'G. Russell',"pts":90,"marker":'2X',"otherAvg":21.0},{"race":'Japan',"pick":'G. Russell',"pts":54,"marker":'2X',"otherAvg":21.7}],"hitRate":100,"avgPts":74.0,"count":3},{"name":'Lori',"color":'#D4537E',"races":[{"race":'Australia',"pick":'C. Leclerc',"pts":58,"marker":'2X',"otherAvg":19.5},{"race":'China',"pick":'G. Russell',"pts":90,"marker":'2X',"otherAvg":39.7},{"race":'Japan',"pick":'G. Russell',"pts":54,"marker":'2X',"otherAvg":19.2},{"race":'Japan',"pick":'C. Leclerc',"pts":93,"marker":'3X',"otherAvg":19.2}],"hitRate":100,"avgPts":73.8,"count":4},{"name":'Stu',"color":'#1D9E75',"races":[{"race":'Australia',"pick":'C. Leclerc',"pts":58,"marker":'2X',"otherAvg":29.2},{"race":'China',"pick":'C. Leclerc',"pts":102,"marker":'2X',"otherAvg":64.2},{"race":'Japan',"pick":'G. Russell',"pts":54,"marker":'2X',"otherAvg":19.5}],"hitRate":100,"avgPts":71.3,"count":3},{"name":'Cain',"color":'#BA7517',"races":[{"race":'Australia',"pick":'C. Leclerc',"pts":58,"marker":'2X',"otherAvg":17.5},{"race":'China',"pick":'G. Russell',"pts":90,"marker":'2X',"otherAvg":43.3},{"race":'Japan',"pick":'G. Russell',"pts":54,"marker":'2X',"otherAvg":14.0}],"hitRate":100,"avgPts":67.3,"count":3},{"name":'Grayson',"color":'#7F77DD',"races":[{"race":'Australia',"pick":'M. Verstappen',"pts":100,"marker":'2X',"otherAvg":24.7},{"race":'China',"pick":'M. Verstappen',"pts":28,"marker":'2X',"otherAvg":40.3},{"race":'Japan',"pick":'G. Russell',"pts":54,"marker":'2X',"otherAvg":17.2}],"hitRate":100,"avgPts":60.7,"count":3},{"name":'Dan',"color":'#5DCAA5',"races":[{"race":'Australia',"pick":'O. Piastri',"pts":-28,"marker":'2X',"otherAvg":1.7},{"race":'China',"pick":'C. Leclerc',"pts":102,"marker":'2X',"otherAvg":20.0},{"race":'Japan',"pick":'C. Leclerc',"pts":62,"marker":'2X',"otherAvg":13.3}],"hitRate":67,"avgPts":45.3,"count":3}];
 const nManagers=8;
+const p1Manager='Tim';
 const raceSel=document.getElementById('raceSel');
 const teamSel=document.getElementById('teamSel');
 const tradeRaceSel=document.getElementById('tradeRaceSel');
@@ -950,7 +951,7 @@ const tradeRaceSel=document.getElementById('tradeRaceSel');
 /* ── Lineup viewer ── */
 function showRace(rname){
   const teams=teamsByRace[rname]||[];
-  const prev=teamSel.value;
+  const prev=teamSel.value||p1Manager;
   teamSel.innerHTML='';
   teams.forEach(t=>{
     const o=document.createElement('option');
