@@ -303,7 +303,7 @@ const chart=new Chart(document.getElementById('barChart'),{
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y} pts`}}},
     scales:{
       x:{ticks:{color:'#888',maxRotation:30},grid:{color:'rgba(255,255,255,0.06)'}},
-      y:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}}
+      y:{ticks:{color:'#888',display:false},grid:{color:'rgba(255,255,255,0.06)'},border:{display:false}}
     }}
 });
 // After render, clone y-axis onto the frozen overlay
@@ -511,16 +511,16 @@ render();
 <div style="position:relative;height:280px"><canvas id="budgetChart"></canvas></div>
 <div class="legend" id="legend-budget"></div>
 <div class="section-label">Budget change per race</div>
-<div class="card" style="padding:4px 0;overflow-x:auto">
-  <table style="width:100%;border-collapse:collapse">
+<div class="card" style="padding:4px 0;overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <table style="border-collapse:collapse;min-width:max(100%,390px)">
     <thead>
       <tr style="border-bottom:0.5px solid #2a2a2a">
-        <th style="font-size:10px;color:#555;font-weight:500;text-align:left;padding:4px 8px">Manager</th>
+        <th style="font-size:10px;color:#555;font-weight:500;text-align:left;padding:4px 8px;position:sticky;left:0;background:#1a1a1a;z-index:1;min-width:90px">Manager</th>
         <th style="font-size:10px;color:#555;font-weight:500;text-align:right;padding:4px 8px;white-space:nowrap">Australia</th><th style="font-size:10px;color:#555;font-weight:500;text-align:right;padding:4px 8px;white-space:nowrap">China</th><th style="font-size:10px;color:#555;font-weight:500;text-align:right;padding:4px 8px;white-space:nowrap">Japan</th>
       </tr>
     </thead>
     <tbody><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#378ADD;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Tim</span>
@@ -528,7 +528,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.5m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.1m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.9m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#1D9E75;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Stu</span>
@@ -536,7 +536,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.5m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.1m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.9m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#D85A30;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Jaime</span>
@@ -544,7 +544,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+1.9m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.1m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+1.7m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#D4537E;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Lori</span>
@@ -552,7 +552,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+0.1m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+0.9m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+1.7m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#7F77DD;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Grayson</span>
@@ -560,7 +560,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+1.6m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+1.0m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.4m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#BA7517;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Cain</span>
@@ -568,7 +568,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+0.9m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.4m</td><td style="font-size:12px;font-weight:500;color:#1D9E75;text-align:right;padding:5px 8px;white-space:nowrap">+2.0m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#888780;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Mark</span>
@@ -576,7 +576,7 @@ render();
   </td>
   <td style="font-size:12px;font-weight:500;color:#E24B4A;text-align:right;padding:5px 8px;white-space:nowrap">-0.3m</td><td style="font-size:12px;font-weight:500;color:#E24B4A;text-align:right;padding:5px 8px;white-space:nowrap">-2.4m</td><td style="font-size:12px;font-weight:500;color:#555;text-align:right;padding:5px 8px;white-space:nowrap">0.0m</td>
 </tr><tr style="border-bottom:0.5px solid #2a2a2a">
-  <td style="padding:5px 8px;white-space:nowrap">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
     <div style="display:flex;align-items:center;gap:7px">
       <div style="width:8px;height:8px;border-radius:50%;background:#5DCAA5;flex-shrink:0"></div>
       <span style="font-size:13px;font-weight:500">Dan</span>
