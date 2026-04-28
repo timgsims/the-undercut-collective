@@ -282,18 +282,60 @@ leg.innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;backg
   <div><span class="tag">Range: 105 pts</span><span class="tag">Avg: 174 pts</span><span class="tag">Everyone positive</span></div>
 </div>
 <div class="section-label">Points per race — all managers</div>
-<div style="position:relative;height:300px"><canvas id="barChart"></canvas></div>
+<div style="position:relative;height:300px;overflow:hidden">
+  <div id="barChartYAxis" style="position:absolute;top:0;left:0;width:48px;height:100%;z-index:2;background:#0f0f0f;pointer-events:none"></div>
+  <div id="barChartScroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;height:100%;padding-left:48px;box-sizing:border-box">
+    <div style="position:relative;height:100%;min-width:400px">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+</div>
 <div class="legend" id="legend-race"></div>
 <script>
 (function(){
-new Chart(document.getElementById('barChart'),{
+const nRaces=3;
+const minW=Math.max(nRaces*90,400);
+const chart=new Chart(document.getElementById('barChart'),{
   type:'bar',
   data:{labels:['Australia','China','Japan'],datasets:[{"label":'Tim',"data":[243,481,199],"backgroundColor":'#378ADD',"borderWidth":0},{"label":'Stu',"data":[233,487,171],"backgroundColor":'#1D9E75',"borderWidth":0},{"label":'Jaime',"data":[214,505,156],"backgroundColor":'#D85A30',"borderWidth":0},{"label":'Lori',"data":[175,328,243],"backgroundColor":'#D4537E',"borderWidth":0},{"label":'Grayson',"data":[248,270,157],"backgroundColor":'#7F77DD',"borderWidth":0},{"label":'Cain',"data":[163,350,138],"backgroundColor":'#BA7517',"borderWidth":0},{"label":'Mark',"data":[153,216,184],"backgroundColor":'#888780',"borderWidth":0},{"label":'Dan',"data":[-18,222,142],"backgroundColor":'#5DCAA5',"borderWidth":0}]},
   options:{responsive:true,maintainAspectRatio:false,
+    layout:{padding:{left:0}},
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y} pts`}}},
-    scales:{x:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}},
-             y:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}}}}
+    scales:{
+      x:{ticks:{color:'#888',maxRotation:30},grid:{color:'rgba(255,255,255,0.06)'}},
+      y:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}}
+    }}
 });
+// After render, clone y-axis onto the frozen overlay
+function freezeYAxis(){
+  const yAxis=document.getElementById('barChartYAxis');
+  const cvs=document.getElementById('barChart');
+  // Draw a mini canvas showing just the y-axis ticks
+  const scale=chart.scales.y;
+  if(!scale)return;
+  const fc=document.createElement('canvas');
+  fc.width=48; fc.height=cvs.clientHeight||300;
+  fc.style.width='48px'; fc.style.height='100%';
+  const ctx2=fc.getContext('2d');
+  ctx2.fillStyle='#0f0f0f';
+  ctx2.fillRect(0,0,48,fc.height);
+  const ticks=scale.ticks;
+  const top=scale.top; const bottom=scale.bottom;
+  const range=bottom-top;
+  const vMin=scale.min; const vMax=scale.max;
+  ticks.forEach(t=>{
+    const v=t.value;
+    const yPx=top+((vMax-v)/(vMax-vMin))*range;
+    ctx2.fillStyle='#888';
+    ctx2.font='11px -apple-system,sans-serif';
+    ctx2.textAlign='right';
+    ctx2.fillText(t.label,44,yPx+4);
+  });
+  yAxis.innerHTML='';
+  yAxis.appendChild(fc);
+}
+chart.options.animation={onComplete:freezeYAxis};
+chart.update();
 document.getElementById('legend-race').innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block"></span>Tim</span><span><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block"></span>Stu</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block"></span>Jaime</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D4537E;display:inline-block"></span>Lori</span><span><span style="width:10px;height:10px;border-radius:2px;background:#7F77DD;display:inline-block"></span>Grayson</span><span><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block"></span>Cain</span><span><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block"></span>Mark</span><span><span style="width:10px;height:10px;border-radius:2px;background:#5DCAA5;display:inline-block"></span>Dan</span>';
 })();
 </script>
@@ -789,7 +831,10 @@ new Chart(document.getElementById('posChart'),{
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: P${ctx.parsed.y}`}}},
     scales:{
       x:{ticks:{color:'#888',font:{size:12}},grid:{color:'rgba(255,255,255,0.06)'}},
-      y:{reverse:true,min:0.5,max:8+0.5,ticks:{color:'#888',stepSize:1,callback:function(v){const r=Math.round(v);return(r>=1&&r<=8&&Math.abs(v-r)<0.01)?'P'+r:'';}},grid:{color:'rgba(255,255,255,0.06)'}}
+      y:{reverse:true,min:0.5,max:8+0.5,
+        afterBuildTicks:function(ax){ax.ticks=[...[1,2,3,4,5,6,7,8].map(v=>{return{value:v};})]},
+        ticks:{color:'#888',callback:function(v){const r=Math.round(v);return(r>=1&&r<=8)?'P'+r:'';}},
+        grid:{color:'rgba(255,255,255,0.06)'}}
     }}
 });
 document.getElementById('legend-positions').innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block;flex-shrink:0"></span>Tim</span><span><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block;flex-shrink:0"></span>Stu</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block;flex-shrink:0"></span>Jaime</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D4537E;display:inline-block;flex-shrink:0"></span>Lori</span><span><span style="width:10px;height:10px;border-radius:2px;background:#7F77DD;display:inline-block;flex-shrink:0"></span>Grayson</span><span><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block;flex-shrink:0"></span>Cain</span><span><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block;flex-shrink:0"></span>Mark</span><span><span style="width:10px;height:10px;border-radius:2px;background:#5DCAA5;display:inline-block;flex-shrink:0"></span>Dan</span>';
