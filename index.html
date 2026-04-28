@@ -191,7 +191,7 @@
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">2026 Season · 3/22 races · Last: Japan · Updated 28 Apr 2026, 9:25 pm NZT</span>
+      <span class="header-badge">2026 Season · 3/22 races · Last: Japan · Updated 28 Apr 2026, 10:39 pm NZT</span>
     </div>
     <nav class="tab-nav">
       <button class="tab-btn active" id="tab-leaderboard" onclick="showTab('leaderboard')">🏁 Leaderboard</button>
@@ -1106,17 +1106,18 @@ renderTrades(tradeRaceSel.value);
 
 </div>
 <script>
-function showTab(slug) {
+function showTab(slug, fromRestore) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + slug).classList.add('active');
   document.getElementById('tab-' + slug).classList.add('active');
   document.getElementById('tab-' + slug).scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  window.scrollTo({top:0, behavior: fromRestore ? 'instant' : 'smooth'});
   try { sessionStorage.setItem('uc-tab', slug); } catch(e) {}
 }
 try {
   const t = sessionStorage.getItem('uc-tab');
-  if (t && document.getElementById('panel-' + t)) showTab(t);
+  if (t && document.getElementById('panel-' + t)) showTab(t, true);
 } catch(e) {}
 </script>
 </body>
