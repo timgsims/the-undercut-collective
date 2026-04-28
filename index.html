@@ -138,8 +138,9 @@
   .pick { border-radius: 8px; padding: 7px 10px; background: #111; border: 0.5px solid #2a2a2a; }
   .pick-label { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
   .pick-name { font-size: 12px; font-weight: 500; }
+  .pick-pts { font-size: 12px; font-weight: 500; margin-top: 3px; }
   .drs-badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 10px; background: #FFD700; color: #7a5800; font-weight: 500; margin-left: 4px; }
-  .pop-row { display: grid; grid-template-columns: 1fr 80px; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; }
+  .pop-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; }
   .pop-row:last-child { border-bottom: none; }
   .pop-bar-bg { height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 3px; }
   .pop-bar-fill { height: 100%; border-radius: 2px; }
@@ -849,52 +850,136 @@ document.getElementById('legend-positions').innerHTML='<span><span style="width:
 <div class="subtitle">Team Picks · Starting lineups &amp; driver popularity</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">8</div><div class="mc-lbl">Teams</div></div>
-  <div class="mc"><div class="mc-val">Leclerc</div><div class="mc-lbl">Most picked driver (5×)</div></div>
-  <div class="mc"><div class="mc-val">Ferrari</div><div class="mc-lbl">Most picked constructor (6×)</div></div>
-  <div class="mc"><div class="mc-val">Russell</div><div class="mc-lbl">Most picked DRS (3×)</div></div>
+  <div class="mc"><div class="mc-val">Russell</div><div class="mc-lbl">Most picked driver (17×)</div></div>
+  <div class="mc"><div class="mc-val">Ferrari</div><div class="mc-lbl">Most picked constructor (15×)</div></div>
+  <div class="mc"><div class="mc-val">Russell</div><div class="mc-lbl">Most used DRS (14×)</div></div>
 </div>
+
+<div class="section-label">Lineup viewer</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-  <label>Race</label>
-  <select id="raceSel" onchange="ucPicksRace(this.value)"><option value="Australia">Australia</option></select>
-  <label style="margin-left:12px">Manager</label>
+  <label style="font-size:13px">Race</label>
+  <select id="raceSel" onchange="ucPicksRace(this.value)"><option value="Australia">Australia</option><option value="China">China</option><option value="Japan">Japan</option></select>
+  <label style="font-size:13px;margin-left:12px">Manager</label>
   <select id="teamSel" onchange="ucPicksTeam(raceSel.value, this.value)"></select>
 </div>
-<div id="team-display"></div>
+<div id="picks-team-display"></div>
+
+<div class="section-label">Driver &amp; constructor popularity</div>
+<div class="hint" style="margin-bottom:12px">Counts managers who picked each driver/constructor for the selected race. Actual race points shown alongside.</div>
 <div class="pop-grid">
-  <div><div class="section-label" style="margin-top:0">Most picked drivers</div><div class="card"><div id="driver-pop"><div class="pop-row"><div><div class="pop-name">C. Leclerc</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:100%;background:#378ADD"></div></div></div><div class="pop-count">5/8 teams</div></div><div class="pop-row"><div><div class="pop-name">G. Russell</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:100%;background:#378ADD"></div></div></div><div class="pop-count">5/8 teams</div></div><div class="pop-row"><div><div class="pop-name">L. Lawson</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:100%;background:#378ADD"></div></div></div><div class="pop-count">5/8 teams</div></div><div class="pop-row"><div><div class="pop-name">G. Bortoletto</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:100%;background:#378ADD"></div></div></div><div class="pop-count">5/8 teams</div></div><div class="pop-row"><div><div class="pop-name">V. Bottas</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:100%;background:#378ADD"></div></div></div><div class="pop-count">5/8 teams</div></div><div class="pop-row"><div><div class="pop-name">A. Lindblad</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:80%;background:#378ADD"></div></div></div><div class="pop-count">4/8 teams</div></div><div class="pop-row"><div><div class="pop-name">O. Bearman</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:40%;background:#378ADD"></div></div></div><div class="pop-count">2/8 teams</div></div><div class="pop-row"><div><div class="pop-name">N. Hulkenberg</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:40%;background:#378ADD"></div></div></div><div class="pop-count">2/8 teams</div></div></div></div></div>
-  <div><div class="section-label" style="margin-top:0">Most picked constructors</div><div class="card"><div id="con-pop"><div class="pop-row"><div><div class="pop-name">Ferrari</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:100%;background:#D85A30"></div></div></div><div class="pop-count">6/8 teams</div></div><div class="pop-row"><div><div class="pop-name">Haas</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:67%;background:#D85A30"></div></div></div><div class="pop-count">4/8 teams</div></div><div class="pop-row"><div><div class="pop-name">Audi</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:50%;background:#D85A30"></div></div></div><div class="pop-count">3/8 teams</div></div><div class="pop-row"><div><div class="pop-name">McLaren</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:33%;background:#D85A30"></div></div></div><div class="pop-count">2/8 teams</div></div><div class="pop-row"><div><div class="pop-name">Mercedes</div><div class="pop-bar-bg"><div class="pop-bar-fill" style="width:17%;background:#D85A30"></div></div></div><div class="pop-count">1/8 teams</div></div></div></div></div>
+  <div>
+    <div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Drivers</div>
+    <div class="card" style="padding:12px 16px"><div id="picks-driver-pop"></div></div>
+  </div>
+  <div>
+    <div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Constructors</div>
+    <div class="card" style="padding:12px 16px"><div id="picks-con-pop"></div></div>
+  </div>
 </div>
 <script>
 (function(){
-const teamsByRace={"Australia":[{"name":'Tim',"teamName":'Team Ferrari Hopium',"color":'#378ADD',"chip":{"label":'Limitless',"bg":'#1a3a5c',"tc":'#60aaff'},"picks":[{"name":'C. Leclerc',"drs":false},{"name":'G. Russell',"drs":true},{"name":'L. Lawson',"drs":false},{"name":'G. Bortoletto',"drs":false},{"name":'A. Lindblad',"drs":false},{"name":'Ferrari',"drs":false},{"name":'Haas',"drs":false}]},{"name":'Stu',"teamName":'The Anthill Mob',"color":'#1D9E75',"chip":{"label":'Limitless',"bg":'#1a3a5c',"tc":'#60aaff'},"picks":[{"name":'C. Leclerc',"drs":true},{"name":'G. Russell',"drs":false},{"name":'L. Lawson',"drs":false},{"name":'G. Bortoletto',"drs":false},{"name":'A. Lindblad',"drs":false},{"name":'Ferrari',"drs":false},{"name":'Haas',"drs":false}]},{"name":'Jaime',"teamName":'Cadil-lack of Data',"color":'#D85A30',"chip":{"label":'Limitless',"bg":'#1a3a5c',"tc":'#60aaff'},"picks":[{"name":'G. Russell',"drs":true},{"name":'L. Hamilton',"drs":false},{"name":'A. Lindblad',"drs":false},{"name":'E. Ocon',"drs":false},{"name":'V. Bottas',"drs":false},{"name":'Haas',"drs":false},{"name":'Ferrari',"drs":false}]},{"name":'Lori',"teamName":'Piastri\'d ma pants',"color":'#D4537E',"chip":{"label":'Extra DRS',"bg":'#1a3010',"tc":'#88dd44'},"picks":[{"name":'C. Leclerc',"drs":true},{"name":'G. Russell',"drs":false},{"name":'L. Lawson',"drs":false},{"name":'V. Bottas',"drs":false},{"name":'O. Bearman',"drs":false},{"name":'Ferrari',"drs":false},{"name":'Audi',"drs":false}]},{"name":'Grayson',"teamName":'Reigning champppp',"color":'#7F77DD',"chip":null,"picks":[{"name":'M. Verstappen',"drs":true},{"name":'N. Hulkenberg',"drs":false},{"name":'O. Bearman',"drs":false},{"name":'L. Lawson',"drs":false},{"name":'G. Bortoletto',"drs":false},{"name":'Mercedes',"drs":false},{"name":'Haas',"drs":false}]},{"name":'Cain',"teamName":'Hulken Burgen',"color":'#BA7517',"chip":{"label":'Wildcard',"bg":'#4a1a12',"tc":'#ff7a5a'},"picks":[{"name":'C. Leclerc',"drs":true},{"name":'V. Bottas',"drs":false},{"name":'G. Bortoletto',"drs":false},{"name":'L. Lawson',"drs":false},{"name":'A. Lindblad',"drs":false},{"name":'Ferrari',"drs":false},{"name":'McLaren',"drs":false}]},{"name":'Mark',"teamName":'Valtteris Moustache Rides',"color":'#888780',"chip":null,"picks":[{"name":'G. Russell',"drs":true},{"name":'C. Leclerc',"drs":false},{"name":'N. Hulkenberg',"drs":false},{"name":'G. Bortoletto',"drs":false},{"name":'V. Bottas',"drs":false},{"name":'Ferrari',"drs":false},{"name":'Audi',"drs":false}]},{"name":'Dan',"teamName":'AutoBottas Roll Out',"color":'#5DCAA5',"chip":null,"picks":[{"name":'O. Piastri',"drs":true},{"name":'P. Gasly',"drs":false},{"name":'V. Bottas',"drs":false},{"name":'S. Perez',"drs":false},{"name":'I. Hadjaar',"drs":false},{"name":'McLaren',"drs":false},{"name":'Audi',"drs":false}]}]};
+const teamsByRace={"Australia":[{"name":'Grayson',"teamName":'Reigning champppp',"color":'#7F77DD',"racePts":248,"chip":null,"picks":[{"name":'M. Verstappen',"drs":true,"pts":100,"isCon":false},{"name":'N. Hulkenberg',"drs":false,"pts":-20,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":20,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":5,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":13,"isCon":false},{"name":'Mercedes',"drs":false,"pts":96,"isCon":true},{"name":'Haas',"drs":false,"pts":34,"isCon":true}]},{"name":'Tim',"teamName":'Team Ferrari Hopium',"color":'#378ADD',"racePts":243,"chip":null,"picks":[{"name":'C. Leclerc',"drs":false,"pts":29,"isCon":false},{"name":'G. Russell',"drs":true,"pts":78,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":5,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":13,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":15,"isCon":false},{"name":'Ferrari',"drs":false,"pts":69,"isCon":true},{"name":'Haas',"drs":false,"pts":34,"isCon":true}]},{"name":'Stu',"teamName":'The Anthill Mob',"color":'#1D9E75',"racePts":233,"chip":null,"picks":[{"name":'C. Leclerc',"drs":true,"pts":58,"isCon":false},{"name":'G. Russell',"drs":false,"pts":39,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":5,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":13,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":15,"isCon":false},{"name":'Ferrari',"drs":false,"pts":69,"isCon":true},{"name":'Haas',"drs":false,"pts":34,"isCon":true}]},{"name":'Jaime',"teamName":'Cadil-lack of Data',"color":'#D85A30',"racePts":214,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":78,"isCon":false},{"name":'L. Hamilton',"drs":false,"pts":25,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":15,"isCon":false},{"name":'E. Ocon',"drs":false,"pts":9,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":-16,"isCon":false},{"name":'Haas',"drs":false,"pts":34,"isCon":true},{"name":'Ferrari',"drs":false,"pts":69,"isCon":true}]},{"name":'Lori',"teamName":'Piastri\'d ma pants',"color":'#D4537E',"racePts":175,"chip":null,"picks":[{"name":'C. Leclerc',"drs":true,"pts":58,"isCon":false},{"name":'G. Russell',"drs":false,"pts":39,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":5,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":-16,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":20,"isCon":false},{"name":'Ferrari',"drs":false,"pts":69,"isCon":true},{"name":'Audi',"drs":false,"pts":0,"isCon":true}]},{"name":'Cain',"teamName":'Hulken Burgen',"color":'#BA7517',"racePts":163,"chip":null,"picks":[{"name":'C. Leclerc',"drs":true,"pts":58,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":-16,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":13,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":5,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":15,"isCon":false},{"name":'Ferrari',"drs":false,"pts":69,"isCon":true},{"name":'McLaren',"drs":false,"pts":19,"isCon":true}]},{"name":'Mark',"teamName":'Valtteris Moustache Rides',"color":'#888780',"racePts":153,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":78,"isCon":false},{"name":'C. Leclerc',"drs":false,"pts":29,"isCon":false},{"name":'N. Hulkenberg',"drs":false,"pts":-20,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":13,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":-16,"isCon":false},{"name":'Ferrari',"drs":false,"pts":69,"isCon":true},{"name":'Audi',"drs":false,"pts":0,"isCon":true}]},{"name":'Dan',"teamName":'AutoBottas Roll Out',"color":'#5DCAA5',"racePts":-18,"chip":null,"picks":[{"name":'O. Piastri',"drs":true,"pts":-28,"isCon":false},{"name":'P. Gasly',"drs":false,"pts":11,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":-16,"isCon":false},{"name":'S. Perez',"drs":false,"pts":4,"isCon":false},{"name":'I. Hadjaar',"drs":false,"pts":-8,"isCon":false},{"name":'McLaren',"drs":false,"pts":19,"isCon":true},{"name":'Audi',"drs":false,"pts":0,"isCon":true}]}],"China":[{"name":'Jaime',"teamName":'Cadil-lack of Data',"color":'#D85A30',"racePts":505,"chip":{"label":'Limitless',"bg":'#1a3a5c',"tc":'#60aaff'},"picks":[{"name":'G. Russell',"drs":true,"pts":90,"isCon":false},{"name":'M. Verstappen',"drs":false,"pts":14,"isCon":false},{"name":'K. Antonelli',"drs":false,"pts":68,"isCon":false},{"name":'C. Leclerc',"drs":false,"pts":51,"isCon":false},{"name":'L. Hamilton',"drs":false,"pts":48,"isCon":false},{"name":'Mercedes',"drs":false,"pts":115,"isCon":true},{"name":'Ferrari',"drs":false,"pts":119,"isCon":true}]},{"name":'Stu',"teamName":'The Anthill Mob',"color":'#1D9E75',"racePts":487,"chip":{"label":'Limitless',"bg":'#1a3a5c',"tc":'#60aaff'},"picks":[{"name":'C. Leclerc',"drs":true,"pts":102,"isCon":false},{"name":'G. Russell',"drs":false,"pts":45,"isCon":false},{"name":'L. Hamilton',"drs":false,"pts":48,"isCon":false},{"name":'L. Norris',"drs":false,"pts":-10,"isCon":false},{"name":'K. Antonelli',"drs":false,"pts":68,"isCon":false},{"name":'Ferrari',"drs":false,"pts":119,"isCon":true},{"name":'Mercedes',"drs":false,"pts":115,"isCon":true}]},{"name":'Tim',"teamName":'Team Ferrari Hopium',"color":'#378ADD',"racePts":481,"chip":{"label":'Limitless',"bg":'#1a3a5c',"tc":'#60aaff'},"picks":[{"name":'C. Leclerc',"drs":false,"pts":51,"isCon":false},{"name":'G. Russell',"drs":true,"pts":90,"isCon":false},{"name":'L. Hamilton',"drs":false,"pts":48,"isCon":false},{"name":'L. Norris',"drs":false,"pts":-10,"isCon":false},{"name":'K. Antonelli',"drs":false,"pts":68,"isCon":false},{"name":'Ferrari',"drs":false,"pts":119,"isCon":true},{"name":'Mercedes',"drs":false,"pts":115,"isCon":true}]},{"name":'Cain',"teamName":'Hulken Burgen',"color":'#BA7517',"racePts":350,"chip":{"label":'Wildcard',"bg":'#4a1a12',"tc":'#ff7a5a'},"picks":[{"name":'G. Russell',"drs":true,"pts":90,"isCon":false},{"name":'I. Hadjaar',"drs":false,"pts":19,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":35,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":7,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":34,"isCon":false},{"name":'Mercedes',"drs":false,"pts":115,"isCon":true},{"name":'Racing Bulls',"drs":false,"pts":50,"isCon":true}]},{"name":'Lori',"teamName":'Piastri\'d ma pants',"color":'#D4537E',"racePts":328,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":90,"isCon":false},{"name":'C. Leclerc',"drs":false,"pts":51,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":35,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":3,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":34,"isCon":false},{"name":'Ferrari',"drs":false,"pts":119,"isCon":true},{"name":'Audi',"drs":false,"pts":-4,"isCon":true}]},{"name":'Grayson',"teamName":'Reigning champppp',"color":'#7F77DD',"racePts":270,"chip":null,"picks":[{"name":'M. Verstappen',"drs":true,"pts":28,"isCon":false},{"name":'N. Hulkenberg',"drs":false,"pts":7,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":34,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":35,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":-14,"isCon":false},{"name":'Mercedes',"drs":false,"pts":115,"isCon":true},{"name":'Haas',"drs":false,"pts":65,"isCon":true}]},{"name":'Dan',"teamName":'AutoBottas Roll Out',"color":'#5DCAA5',"racePts":222,"chip":null,"picks":[{"name":'C. Leclerc',"drs":true,"pts":102,"isCon":false},{"name":'P. Gasly',"drs":false,"pts":20,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":3,"isCon":false},{"name":'S. Perez',"drs":false,"pts":20,"isCon":false},{"name":'I. Hadjaar',"drs":false,"pts":19,"isCon":false},{"name":'McLaren',"drs":false,"pts":-7,"isCon":true},{"name":'Haas',"drs":false,"pts":65,"isCon":true}]},{"name":'Mark',"teamName":'Valtteris Moustache Rides',"color":'#888780',"racePts":216,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":90,"isCon":false},{"name":'I. Hadjaar',"drs":false,"pts":19,"isCon":false},{"name":'N. Hulkenberg',"drs":false,"pts":7,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":-14,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":3,"isCon":false},{"name":'Audi',"drs":false,"pts":-4,"isCon":true},{"name":'Mercedes',"drs":false,"pts":115,"isCon":true}]}],"Japan":[{"name":'Lori',"teamName":'Piastri\'d ma pants',"color":'#D4537E',"racePts":243,"chip":{"label":'Extra DRS',"bg":'#1a3010',"tc":'#88dd44'},"picks":[{"name":'G. Russell',"drs":true,"pts":54,"isCon":false},{"name":'C. Leclerc',"drs":false,"pts":93,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":10,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":2,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":-14,"isCon":false},{"name":'Ferrari',"drs":false,"pts":75,"isCon":true},{"name":'Audi',"drs":false,"pts":23,"isCon":true}]},{"name":'Tim',"teamName":'Team Ferrari Hopium',"color":'#378ADD',"racePts":199,"chip":null,"picks":[{"name":'K. Antonelli',"drs":true,"pts":100,"isCon":false},{"name":'C. Leclerc',"drs":false,"pts":31,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":10,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":-14,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":1,"isCon":false},{"name":'Ferrari',"drs":false,"pts":75,"isCon":true},{"name":'Haas',"drs":false,"pts":-4,"isCon":true}]},{"name":'Mark',"teamName":'Valtteris Moustache Rides',"color":'#888780',"racePts":184,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":54,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":10,"isCon":false},{"name":'I. Hadjaar',"drs":false,"pts":5,"isCon":false},{"name":'G. Bortoletto',"drs":false,"pts":3,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":2,"isCon":false},{"name":'Racing Bulls',"drs":false,"pts":18,"isCon":true},{"name":'Mercedes',"drs":false,"pts":92,"isCon":true}]},{"name":'Stu',"teamName":'The Anthill Mob',"color":'#1D9E75',"racePts":171,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":54,"isCon":false},{"name":'C. Leclerc',"drs":false,"pts":31,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":10,"isCon":false},{"name":'S. Perez',"drs":false,"pts":4,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":1,"isCon":false},{"name":'Ferrari',"drs":false,"pts":75,"isCon":true},{"name":'Haas',"drs":false,"pts":-4,"isCon":true}]},{"name":'Grayson',"teamName":'Reigning champppp',"color":'#7F77DD',"racePts":157,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":54,"isCon":false},{"name":'N. Hulkenberg',"drs":false,"pts":10,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":-14,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":10,"isCon":false},{"name":'E. Ocon',"drs":false,"pts":9,"isCon":false},{"name":'Mercedes',"drs":false,"pts":92,"isCon":true},{"name":'Haas',"drs":false,"pts":-4,"isCon":true}]},{"name":'Jaime',"teamName":'Cadil-lack of Data',"color":'#D85A30',"racePts":156,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":54,"isCon":false},{"name":'L. Hamilton',"drs":false,"pts":19,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":1,"isCon":false},{"name":'E. Ocon',"drs":false,"pts":9,"isCon":false},{"name":'V. Bottas',"drs":false,"pts":2,"isCon":false},{"name":'Haas',"drs":false,"pts":-4,"isCon":true},{"name":'Ferrari',"drs":false,"pts":75,"isCon":true}]},{"name":'Dan',"teamName":'AutoBottas Roll Out',"color":'#5DCAA5',"racePts":142,"chip":null,"picks":[{"name":'C. Leclerc',"drs":true,"pts":62,"isCon":false},{"name":'P. Gasly',"drs":false,"pts":14,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":-14,"isCon":false},{"name":'S. Perez',"drs":false,"pts":4,"isCon":false},{"name":'I. Hadjaar',"drs":false,"pts":5,"isCon":false},{"name":'Ferrari',"drs":false,"pts":75,"isCon":true},{"name":'Haas',"drs":false,"pts":-4,"isCon":true}]},{"name":'Cain',"teamName":'Hulken Burgen',"color":'#BA7517',"racePts":138,"chip":null,"picks":[{"name":'G. Russell',"drs":true,"pts":54,"isCon":false},{"name":'A. Albon',"drs":false,"pts":-1,"isCon":false},{"name":'L. Lawson',"drs":false,"pts":10,"isCon":false},{"name":'A. Lindblad',"drs":false,"pts":1,"isCon":false},{"name":'O. Bearman',"drs":false,"pts":-14,"isCon":false},{"name":'Mercedes',"drs":false,"pts":92,"isCon":true},{"name":'Haas',"drs":false,"pts":-4,"isCon":true}]}]};
+const popByRace={"Australia":{"drivers":[{"name":'C. Leclerc',"count":5,"pts":29},{"name":'G. Russell',"count":5,"pts":39},{"name":'L. Lawson',"count":5,"pts":5},{"name":'G. Bortoletto',"count":5,"pts":13},{"name":'V. Bottas',"count":5,"pts":-16},{"name":'A. Lindblad',"count":4,"pts":15},{"name":'O. Bearman',"count":2,"pts":20},{"name":'N. Hulkenberg',"count":2,"pts":-20},{"name":'L. Hamilton',"count":1,"pts":25},{"name":'E. Ocon',"count":1,"pts":9},{"name":'M. Verstappen',"count":1,"pts":50},{"name":'O. Piastri',"count":1,"pts":-14},{"name":'P. Gasly',"count":1,"pts":11},{"name":'S. Perez',"count":1,"pts":4},{"name":'I. Hadjaar',"count":1,"pts":-8}],"cons":[{"name":'Ferrari',"count":6,"pts":69},{"name":'Haas',"count":4,"pts":34},{"name":'Audi',"count":3,"pts":0},{"name":'McLaren',"count":2,"pts":19},{"name":'Mercedes',"count":1,"pts":96}],"maxD":5,"maxC":6},"China":{"drivers":[{"name":'G. Russell',"count":6,"pts":45},{"name":'C. Leclerc',"count":5,"pts":51},{"name":'L. Hamilton',"count":3,"pts":48},{"name":'K. Antonelli',"count":3,"pts":68},{"name":'L. Lawson',"count":3,"pts":35},{"name":'V. Bottas',"count":3,"pts":3},{"name":'O. Bearman',"count":3,"pts":34},{"name":'I. Hadjaar',"count":3,"pts":19},{"name":'L. Norris',"count":2,"pts":-10},{"name":'M. Verstappen',"count":2,"pts":14},{"name":'N. Hulkenberg',"count":2,"pts":7},{"name":'G. Bortoletto',"count":2,"pts":-14},{"name":'A. Lindblad',"count":1,"pts":7},{"name":'P. Gasly',"count":1,"pts":20},{"name":'S. Perez',"count":1,"pts":20}],"cons":[{"name":'Mercedes',"count":6,"pts":115},{"name":'Ferrari',"count":4,"pts":119},{"name":'Audi',"count":2,"pts":-4},{"name":'Haas',"count":2,"pts":65},{"name":'Racing Bulls',"count":1,"pts":50},{"name":'McLaren',"count":1,"pts":-7}],"maxD":6,"maxC":6},"Japan":{"drivers":[{"name":'L. Lawson',"count":6,"pts":10},{"name":'G. Russell',"count":6,"pts":27},{"name":'O. Bearman',"count":5,"pts":-14},{"name":'C. Leclerc',"count":4,"pts":31},{"name":'A. Lindblad',"count":4,"pts":1},{"name":'V. Bottas',"count":3,"pts":2},{"name":'S. Perez',"count":2,"pts":4},{"name":'E. Ocon',"count":2,"pts":9},{"name":'I. Hadjaar',"count":2,"pts":5},{"name":'K. Antonelli',"count":1,"pts":50},{"name":'L. Hamilton',"count":1,"pts":19},{"name":'N. Hulkenberg',"count":1,"pts":10},{"name":'A. Albon',"count":1,"pts":-1},{"name":'G. Bortoletto',"count":1,"pts":3},{"name":'P. Gasly',"count":1,"pts":14}],"cons":[{"name":'Haas',"count":6,"pts":-4},{"name":'Ferrari',"count":5,"pts":75},{"name":'Mercedes',"count":3,"pts":92},{"name":'Audi',"count":1,"pts":23},{"name":'Racing Bulls',"count":1,"pts":18}],"maxD":6,"maxC":6}};
+const nManagers=8;
 const raceSel=document.getElementById('raceSel');
 const teamSel=document.getElementById('teamSel');
+
 function showRace(rname){
   const teams=teamsByRace[rname]||[];
   const prev=teamSel.value;
   teamSel.innerHTML='';
-  teams.forEach(t=>{const o=document.createElement('option');o.value=t.name;o.textContent=t.name+' — '+t.teamName;if(t.name===prev)o.selected=true;teamSel.appendChild(o);});
+  teams.forEach(t=>{
+    const o=document.createElement('option');
+    o.value=t.name;
+    o.textContent=t.name+' — '+t.teamName;
+    if(t.name===prev)o.selected=true;
+    teamSel.appendChild(o);
+  });
   if(teams.length>0) showTeam(rname, teamSel.value);
-  else document.getElementById('team-display').innerHTML='<div style="padding:1rem;color:#555;font-size:13px">No lineup data for this race yet.</div>';
+  else document.getElementById('picks-team-display').innerHTML=
+    '<div style="padding:1rem;color:#555;font-size:13px">No lineup data for this race yet.</div>';
+  renderPop(rname);
 }
-function showTeam(rname, name){
+
+function showTeam(rname, manName){
   const teams=teamsByRace[rname]||[];
-  const t=teams.find(x=>x.name===name);
-  if(!t){document.getElementById('team-display').innerHTML='';return;}
-  const picks=t.picks.map(d=>`<div class="pick" style="${d.drs?`border-color:${t.color};background:${t.color}11`:''}">
-    <div class="pick-label">${d.drs?'DRS boost':'Driver/Constructor'}</div>
-    <div class="pick-name">${d.name}${d.drs?'<span class="drs-badge">DRS</span>':''}</div>
-  </div>`).join('');
-  const chipHtml=t.chip?`<span class="chip-pill" style="background:${t.chip.bg};color:${t.chip.tc};margin-left:auto">${t.chip.label}</span>`:'';
-  document.getElementById('team-display').innerHTML=`<div class="team-card">
+  const t=teams.find(x=>x.name===manName);
+  if(!t){document.getElementById('picks-team-display').innerHTML='';return;}
+
+  const chipHtml=t.chip
+    ?`<span class="chip-pill" style="background:${t.chip.bg};color:${t.chip.tc};margin-left:auto">${t.chip.label}</span>`:'';
+
+  // Split picks into drivers (first 5) and constructors (last 2) by is_constructor flag
+  const drivers=t.picks.filter(p=>!p.isCon);
+  const cons=t.picks.filter(p=>p.isCon);
+
+  function pickCard(p){
+    const ptsTxt=p.pts!=null?(p.pts>=0?`+${p.pts}`:`${p.pts}`):'–';
+    const ptsColor=p.pts==null?'#555':p.pts>0?'#4caf50':p.pts<0?'#f44336':'#888';
+    const drsStyle=p.drs?`border-color:${t.color};background:${t.color}18`:'';
+    // If DRS, show the doubled score (pts * 2) as the earned pts
+    const earnedPts=p.drs&&p.pts!=null?p.pts*2:p.pts;
+    const earnedTxt=earnedPts!=null?(earnedPts>=0?`+${earnedPts}`:`${earnedPts}`):'–';
+    const earnedColor=earnedPts==null?'#555':earnedPts>0?'#4caf50':earnedPts<0?'#f44336':'#888';
+    return `<div class="pick" style="${drsStyle}">
+      <div class="pick-label">${p.drs?'<span style="color:'+t.color+'">⚡ DRS</span>':p.isCon?'Constructor':'Driver'}</div>
+      <div class="pick-name">${p.name}</div>
+      <div class="pick-pts" style="color:${earnedColor}">${earnedTxt} pts${p.drs&&p.pts!=null?`<span style="color:#555;font-size:10px"> (base ${ptsTxt})</span>`:''}</div>
+    </div>`;
+  }
+
+  const driverCards=drivers.map(pickCard).join('');
+  const conCards=cons.map(pickCard).join('');
+
+  const totalPts=t.racePts;
+  const totalTxt=totalPts>=0?`+${totalPts}`:`${totalPts}`;
+  const totalColor=totalPts>0?'#4caf50':totalPts<0?'#f44336':'#888';
+
+  document.getElementById('picks-team-display').innerHTML=`
+  <div class="team-card" style="margin-bottom:1rem">
     <div class="team-header">
       <div class="team-dot" style="background:${t.color}"></div>
       <div><div class="team-name">${t.name}</div><div class="team-sub">${t.teamName}</div></div>
-      ${chipHtml}
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        ${chipHtml}
+        <div style="font-size:18px;font-weight:600;color:${totalColor}">${totalTxt} pts</div>
+      </div>
     </div>
-    <div class="picks-grid">${picks}</div>
+    <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Drivers</div>
+    <div class="picks-grid">${driverCards}</div>
+    <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Constructors</div>
+    <div class="picks-grid">${conCards}</div>
   </div>`;
 }
+
+function renderPop(rname){
+  const pop=popByRace[rname];
+  if(!pop){
+    document.getElementById('picks-driver-pop').innerHTML='';
+    document.getElementById('picks-con-pop').innerHTML='';
+    return;
+  }
+  function barRow(item, maxCnt, isDriver){
+    const pct=Math.round(item.count/maxCnt*100);
+    const ptsStr=item.pts!=null?(item.pts>=0?`<span style="color:#4caf50">+${item.pts}</span>`:`<span style="color:#f44336">${item.pts}</span>`):'';
+    const barColor=isDriver?'#378ADD':'#D85A30';
+    return `<div class="pop-row">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
+          <div class="pop-name">${item.name}</div>
+          <div style="font-size:11px;color:#666;white-space:nowrap">${ptsStr}</div>
+        </div>
+        <div class="pop-bar-bg"><div class="pop-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+      </div>
+      <div class="pop-count" style="white-space:nowrap">${item.count}/${nManagers}</div>
+    </div>`;
+  }
+  document.getElementById('picks-driver-pop').innerHTML=
+    pop.drivers.map(d=>barRow(d,pop.maxD,true)).join('');
+  document.getElementById('picks-con-pop').innerHTML=
+    pop.cons.map(c=>barRow(c,pop.maxC,false)).join('');
+}
+
 window.ucPicksRace=showRace;
 window.ucPicksTeam=showTeam;
 showRace(raceSel.value);
