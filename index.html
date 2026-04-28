@@ -789,7 +789,7 @@ new Chart(document.getElementById('posChart'),{
     plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: P${ctx.parsed.y}`}}},
     scales:{
       x:{ticks:{color:'#888',font:{size:12}},grid:{color:'rgba(255,255,255,0.06)'}},
-      y:{reverse:true,min:0.5,max:8+0.5,ticks:{color:'#888',stepSize:1,callback:v=>v%1===0?'P'+v:''},grid:{color:'rgba(255,255,255,0.06)'}}
+      y:{reverse:true,min:0.5,max:8+0.5,ticks:{color:'#888',stepSize:1,callback:function(v){const r=Math.round(v);return(r>=1&&r<=8&&Math.abs(v-r)<0.01)?'P'+r:'';}},grid:{color:'rgba(255,255,255,0.06)'}}
     }}
 });
 document.getElementById('legend-positions').innerHTML='<span><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block;flex-shrink:0"></span>Tim</span><span><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block;flex-shrink:0"></span>Stu</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block;flex-shrink:0"></span>Jaime</span><span><span style="width:10px;height:10px;border-radius:2px;background:#D4537E;display:inline-block;flex-shrink:0"></span>Lori</span><span><span style="width:10px;height:10px;border-radius:2px;background:#7F77DD;display:inline-block;flex-shrink:0"></span>Grayson</span><span><span style="width:10px;height:10px;border-radius:2px;background:#BA7517;display:inline-block;flex-shrink:0"></span>Cain</span><span><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block;flex-shrink:0"></span>Mark</span><span><span style="width:10px;height:10px;border-radius:2px;background:#5DCAA5;display:inline-block;flex-shrink:0"></span>Dan</span>';
