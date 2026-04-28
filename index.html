@@ -310,15 +310,17 @@ const chart=new Chart(document.getElementById('barChart'),{
 function freezeYAxis(){
   const yAxis=document.getElementById('barChartYAxis');
   const cvs=document.getElementById('barChart');
-  // Draw a mini canvas showing just the y-axis ticks
   const scale=chart.scales.y;
   if(!scale)return;
+  const dpr=window.devicePixelRatio||1;
+  const cssH=cvs.clientHeight||300;
   const fc=document.createElement('canvas');
-  fc.width=48; fc.height=cvs.clientHeight||300;
-  fc.style.width='48px'; fc.style.height='100%';
+  fc.width=48*dpr; fc.height=cssH*dpr;
+  fc.style.width='48px'; fc.style.height=cssH+'px';
   const ctx2=fc.getContext('2d');
+  ctx2.scale(dpr,dpr);
   ctx2.fillStyle='#0f0f0f';
-  ctx2.fillRect(0,0,48,fc.height);
+  ctx2.fillRect(0,0,48,cssH);
   const ticks=scale.ticks;
   const top=scale.top; const bottom=scale.bottom;
   const range=bottom-top;
@@ -327,7 +329,7 @@ function freezeYAxis(){
     const v=t.value;
     const yPx=top+((vMax-v)/(vMax-vMin))*range;
     ctx2.fillStyle='#888';
-    ctx2.font='11px -apple-system,sans-serif';
+    ctx2.font='11px -apple-system,BlinkMacSystemFont,sans-serif';
     ctx2.textAlign='right';
     ctx2.fillText(t.label,44,yPx+4);
   });
