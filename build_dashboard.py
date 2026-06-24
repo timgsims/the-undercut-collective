@@ -62,12 +62,12 @@ MANAGER_COLOURS = {
 }
 
 CHIP_STYLES = {
-    "Limitless":   {"bg": "#d9e6f7", "tc": "#0C447C"},
-    "Wildcard":    {"bg": "#efdcd9", "tc": "#712B13"},
-    "Final Fix":   {"bg": "#f7e9d9", "tc": "#633806"},
-    "Auto Pilot":  {"bg": "#d9f3ed", "tc": "#085041"},
-    "No Negative": {"bg": "#e7e0fa", "tc": "#3C3489"},
-    "Extra DRS":   {"bg": "#e5f1d9", "tc": "#27500A"},
+    "Limitless":   {"bg": "#1a3a5c", "tc": "#60aaff"},
+    "Wildcard":    {"bg": "#4a1a12", "tc": "#ff7a5a"},
+    "Final Fix":   {"bg": "#3d2200", "tc": "#ffaa44"},
+    "Auto Pilot":  {"bg": "#0d3328", "tc": "#3ddbb0"},
+    "No Negative": {"bg": "#251a4a", "tc": "#b39dff"},
+    "Extra DRS":   {"bg": "#1a3010", "tc": "#88dd44"},
 }
 
 CHIP_ORDER = ["Limitless", "Wildcard", "Final Fix", "Auto Pilot", "No Negative", "Extra DRS"]
@@ -142,44 +142,32 @@ def read_workbook(path):
     data["races_done"]  = [r for r in races if any(
         m["scores"].get(r["name"]) is not None for m in managers_raw)]
 
-    # ── Podiums sheet (index 1) ──────────────────────────────────────────────
-    # Only include races that exist in the Races sheet (filters out cancelled races)
-    valid_race_names = {r["name"] for r in races}
-    ws_pod = wb.worksheets[1]
-    podiums = []
-    for row in range(2, ws_pod.max_row + 1):
-        race_name = ws_pod.cell(row=row, column=1).value
-        if not race_name:
-            continue
-        race_name = str(race_name).strip()
-        if race_name not in valid_race_names:
-            continue   # skip cancelled / removed races
-        p1 = ws_pod.cell(row=row, column=2).value
-        p2 = ws_pod.cell(row=row, column=3).value
-        p3 = ws_pod.cell(row=row, column=4).value
-        podiums.append({
-            "race":   race_name,
-            "first":  str(p1).strip() if p1 else "",
-            "second": str(p2).strip() if p2 else "",
-            "third":  str(p3).strip() if p3 else "",
-        })
-    data["podiums"] = podiums
+    # Podiums are derived later in compute() from per-race score rankings —
+    # same source Race Breakdown uses — instead of read from a worksheet, so the
+    # two pages can never drift apart.
 
     # ── Stats sheet (index 2) — finish distribution + chip usage ────────────
     ws_stats = wb.worksheets[2]
-    finish_dist = {}     # {name: [p1,p2,...,p9]}
+    finish_dist = {}     # {name: [p1, p2, ..., pN]} — N detected dynamically
     chips_used  = {}     # {name: {chip_name: bool}}
 
-    # Rows 2–10: finish distribution
-    for row in range(2, 11):
+    # Rows 2–10: finish distribution.
+    # The number of finish-position columns equals the number of managers in the league —
+    # one column per possible finishing position (P1 through P_N_managers).
+    # This is more reliable than sniffing data types, which picks up the Podiums
+    # and Total Pts columns that also contain integers.
+    n_finish_cols = len(managers_raw)
+    data["n_finish_cols"] = n_finish_cols
+
+    for row in range(2, 12):
         name = ws_stats.cell(row=row, column=2).value
         if not name:
             break
         name = str(name).strip()
         finishes = []
-        for col in range(3, 12):   # cols C–K = P1–P9
+        for col in range(3, 3 + n_finish_cols):
             v = ws_stats.cell(row=row, column=col).value
-            finishes.append(int(v) if v else 0)
+            finishes.append(int(float(str(v))) if v else 0)
         finish_dist[name] = finishes
 
     # Chip usage: header row 12, data rows 13+
@@ -211,67 +199,153 @@ def read_workbook(path):
     data["finish_dist"] = finish_dist
     data["chips_used"]  = chips_used
 
-    # ── Driver Changes sheet (index 3) — lineups ────────────────────────────
+    # ── Stats sheet — chip usage BY RACE (col P onwards, rows 1–9) ───────────
+    # Row 1: col P = "CHIPS USED BY RACE", col Q+ = race names
+    # Rows 2–9: col P = manager name, col Q+ = chip name used that race (or empty)
+    chip_race_usage = {}   # {manager_name: {race_name: chip_name}}
+    chip_by_race_header_col = None
+    for col in range(1, ws_stats.max_column + 1):   # scan whole row 1 for the label
+        v = ws_stats.cell(row=1, column=col).value
+        if v and "CHIPS USED BY RACE" in str(v):
+            chip_by_race_header_col = col
+            break
+
+    if chip_by_race_header_col:
+        # Read race names from row 1 starting one column after the label
+        cbr_race_cols = {}   # {col: race_name}
+        for col in range(chip_by_race_header_col + 1, ws_stats.max_column + 1):
+            rname = ws_stats.cell(row=1, column=col).value
+            if rname and str(rname).strip():
+                cbr_race_cols[col] = str(rname).strip()
+            else:
+                break
+        # Read manager rows (rows 2–9, col P = manager name)
+        for row in range(2, 11):
+            name = ws_stats.cell(row=row, column=chip_by_race_header_col).value
+            if not name:
+                continue
+            name = str(name).strip()
+            used_by_race = {}
+            for col, rname in cbr_race_cols.items():
+                v = ws_stats.cell(row=row, column=col).value
+                if v and str(v).strip():
+                    used_by_race[rname] = str(v).strip()
+            chip_race_usage[name] = used_by_race
+
+    data["chip_race_usage"] = chip_race_usage
+
+    # ── Driver Changes sheet (index 3) — lineups + actual results ────────────
     ws_dc = wb.worksheets[3]
 
-    # Row 2: headers — col C = first race name, H = second race name, etc (every 6 cols? no)
-    # Actual layout: A=Team, B=Name, C=driver/constructor name, D=2X (DRS marker), E=Budget+-, F=Value, G=#
-    # Then H = China picks, I = China #, J = Japan picks, ...
-    # Each race is a separate column group.
+    # Layout (confirmed from XML):
+    #   Row 1: round numbers in race-name cols (D=1, I=2, N=3, S=4 ...)
+    #   Row 2: A=Team, B=Name, C=Starting Value, then per race (5-col blocks):
+    #     [race_col+0] = race name   (e.g. D=Australia, I=China, N=Japan ...)
+    #     [race_col+1] = DRS marker  ("2X" if DRS pick, else empty)
+    #     [race_col+2] = Budget +-
+    #     [race_col+3] = Value
+    #     [race_col+4] = Result      (points manager earned for this pick this race)
+    #   Race blocks start at col 4 (D=index 4 in 1-based) and repeat every 5 cols.
+    #   Manager section: rows 3–58 (7 rows per manager, 5 drivers + 2 constructors)
+    #   Actual driver results: rows 61–82 (same column layout, col E=2X doubled score)
+    #   Constructor results:   rows 83–93 (same column layout, no DRS column)
 
-    # Build lineup_races from row 2 headers
-    lineup_race_cols = {}   # {race_name: col_index}
-    for col in range(3, ws_dc.max_column + 1):
-        hdr = ws_dc.cell(row=2, column=col).value
-        if hdr and str(hdr).strip() not in ("2X", "Budget +-", "Value", "#", ""):
-            # Only grab columns where header is a race name (not a sub-column)
-            # Race cols appear to be C(3), H(8), J(10), L(12) etc in this sheet
-            pass
+    skip_hdrs = {"2X", "Budget +-", "Value", "#", "DRS", "", None}
 
-    # Simpler: just read col C (first race = Australia) for all teams
-    # Structure: 7 rows per team (5 drivers + 2 constructors)
-    lineups = {}  # {manager_name: {race_name: {drivers:[...], constructors:[...], drs:""}}}
-
-    # Find all race columns: row 2, cols 3 onwards, skip sub-columns
-    # Sub-columns after each race: col+1="#", col+2 might be "Budget+-" etc (only after first race)
-    # From XML: C=Australia, H=China, J=Japan, L=Bahrain... (col 3, 8, 10, 12, ...)
-    # Let's detect by reading row 2 and skipping known sub-col names
-    skip_hdrs = {"2X", "Budget +-", "Value", "#", "", None}
-    race_cols_dc = []
-    for col in range(3, ws_dc.max_column + 1):
+    # Detect race columns from row 2 (1-based col 4 = D onward, every 5)
+    race_cols_dc = []   # [(race_name, col_1based), ...]
+    for col in range(4, ws_dc.max_column + 1, 5):
         hdr = ws_dc.cell(row=2, column=col).value
         if hdr and str(hdr).strip() not in skip_hdrs:
             race_cols_dc.append((str(hdr).strip(), col))
 
-    # Read picks per manager (7 rows per manager)
+    # --- Manager lineup section (rows 3–58, 7 rows per manager) ---
+    lineups = {}   # {manager_name: {race_name: [{"name", "drs", "pts", "is_constructor"}, ...]}}
     row = 3
-    while row <= ws_dc.max_row:
+    while row <= 58:
         team = ws_dc.cell(row=row, column=1).value
         name = ws_dc.cell(row=row, column=2).value
         if not team or not name:
-            row += 1
+            row += 7
             continue
         name = str(name).strip()
         if name not in lineups:
             lineups[name] = {}
 
-        # Read 7 rows for this manager (5 drivers + 2 constructors)
         for race_name, col in race_cols_dc:
             picks = []
             for r in range(row, row + 7):
-                pick_name = ws_dc.cell(row=r, column=col).value
-                drs_marker = ws_dc.cell(row=r, column=col + 1).value if col + 1 <= ws_dc.max_column else None
+                pick_name  = ws_dc.cell(row=r, column=col).value
+                drs_marker = ws_dc.cell(row=r, column=col + 1).value
+                pts_val    = ws_dc.cell(row=r, column=col + 4).value
                 if pick_name and str(pick_name).strip():
+                    pname = str(pick_name).strip()
+                    is_con = "." not in pname   # drivers have "X. Surname" initials
+                    try:
+                        pts = int(float(str(pts_val))) if pts_val not in (None, "", "#N/A") else None
+                    except (ValueError, TypeError):
+                        pts = None
                     picks.append({
-                        "name": str(pick_name).strip(),
-                        "drs":  bool(drs_marker and str(drs_marker).strip() == "2X"),
+                        "name":           pname,
+                        "drs":            bool(drs_marker and str(drs_marker).strip() in ("2X", "3X")),
+                        "drs_marker":     str(drs_marker).strip() if drs_marker and str(drs_marker).strip() in ("2X", "3X") else "",
+                        "pts":            pts,   # already the final earned pts (doubled/tripled by formula)
+                        "is_constructor": is_con,
                     })
             if picks:
                 lineups[name][race_name] = picks
 
-        row += 7   # advance to next manager
+        row += 7
 
     data["lineups"] = lineups
+
+    # --- Actual driver results (rows 61–82) ---
+    # col+0 = base pts, col+1 = doubled pts (skip), col+2 = Budget +-, col+3 = Value
+    driver_results  = {}   # {driver_name: {race_name: {"pts": int, "bud": float}}}
+    for row in range(61, 83):
+        dname = ws_dc.cell(row=row, column=1).value
+        if not dname:
+            continue
+        dname = str(dname).strip()
+        driver_results[dname] = {}
+        for race_name, col in race_cols_dc:
+            pts_v = ws_dc.cell(row=row, column=col).value
+            bud_v = ws_dc.cell(row=row, column=col + 2).value
+            try:
+                pts = int(float(str(pts_v))) if pts_v not in (None, "", "#N/A") else None
+            except (ValueError, TypeError):
+                pts = None
+            try:
+                bud = round(float(str(bud_v)), 2) if bud_v not in (None, "", "#N/A") else None
+            except (ValueError, TypeError):
+                bud = None
+            driver_results[dname][race_name] = {"pts": pts, "bud": bud}
+
+    data["driver_results"] = driver_results
+
+    # --- Actual constructor results (rows 83–93) ---
+    # col+0 = pts, col+1 = Budget +- (no DRS column for constructors), col+2 = Value
+    constructor_results = {}   # {constructor_name: {race_name: {"pts": int, "bud": float}}}
+    for row in range(83, 94):
+        bval = ws_dc.cell(row=row, column=2).value   # col B = name
+        if not bval or str(bval).strip() in ("", "B", "Team"):
+            continue
+        cname = str(bval).strip()
+        constructor_results[cname] = {}
+        for race_name, col in race_cols_dc:
+            pts_v = ws_dc.cell(row=row, column=col).value
+            bud_v = ws_dc.cell(row=row, column=col + 1).value   # constructors: bud is col+1
+            try:
+                pts = int(float(str(pts_v))) if pts_v not in (None, "", "#N/A") else None
+            except (ValueError, TypeError):
+                pts = None
+            try:
+                bud = round(float(str(bud_v)), 2) if bud_v not in (None, "", "#N/A") else None
+            except (ValueError, TypeError):
+                bud = None
+            constructor_results[cname][race_name] = {"pts": pts, "bud": bud}
+
+    data["constructor_results"] = constructor_results
 
     # ── Reference Tables sheet (index 9) — budgets ──────────────────────────
     ws_ref = wb.worksheets[9]
@@ -279,15 +353,14 @@ def read_workbook(path):
     # Budget section starts at row 41 based on XML analysis
     # Row 41 = header: Name, Pre-Season, Australia, China, ...
     # Rows 42–50 = one per manager
+    # Anchor: find the row with exactly "Budget" in col A (not "Budget Change")
+    # then header row is immediately after
     budget_header_row = None
-    for row in range(38, 55):
+    for row in range(35, 55):
         cell = ws_ref.cell(row=row, column=1).value
-        if cell and str(cell).strip() == "Name":
-            # Check if next col is "Pre-Season"
-            next_cell = ws_ref.cell(row=row, column=2).value
-            if next_cell and "Pre" in str(next_cell):
-                budget_header_row = row
-                break
+        if cell and str(cell).strip() == "Budget":
+            budget_header_row = row + 1
+            break
 
     budgets = {}   # {name: [pre_season, r1, r2, ...]}
     budget_race_names = []
@@ -323,19 +396,17 @@ def read_workbook(path):
     data["budget_race_names"]  = budget_race_names
 
     # ── Reference Tables sheet — overall standings positions per race ─────────
-    # Rows 14+: Name | Australia | China | Japan | ...  (overall leaderboard pos)
+    # Anchor: find the row with "Position changes" in col A, then header is next row
     ws_ref2 = wb.worksheets[9]
     pos_header_row = None
-    for r in range(12, 30):
+    for r in range(1, ws_ref2.max_row + 1):
         cell_val = ws_ref2.cell(row=r, column=1).value
-        if cell_val and str(cell_val).strip() == "Name":
-            next_val = ws_ref2.cell(row=r, column=2).value
-            if next_val and str(next_val).strip() not in ("Pre-Season", "Budget", ""):
-                pos_header_row = r
-                break
+        if cell_val and "Position changes" in str(cell_val):
+            pos_header_row = r + 1   # header row is immediately after the label
+            break
 
     pos_race_names = []
-    standings_positions = {}   # {name: [pos_r1, pos_r2, ...]}
+    standings_positions = {}
     if pos_header_row:
         for col in range(2, ws_ref2.max_column + 1):
             hdr = ws_ref2.cell(row=pos_header_row, column=col).value
@@ -346,7 +417,7 @@ def read_workbook(path):
         for r in range(pos_header_row + 1, pos_header_row + 15):
             nm = ws_ref2.cell(row=r, column=1).value
             if not nm:
-                continue
+                break
             nm = str(nm).strip()
             vals = []
             for col in range(2, 2 + len(pos_race_names)):
@@ -370,7 +441,6 @@ def read_workbook(path):
 def compute(data):
     managers    = data["managers"]
     races_done  = data["races_done"]
-    podiums     = data["podiums"]
     finish_dist = data["finish_dist"]
     chips_used  = data["chips_used"]
     budgets     = data["budgets"]
@@ -403,6 +473,19 @@ def compute(data):
         race["ranking"] = scores_this_race  # [(name, pts), ...]
         race["winner"]  = scores_this_race[0][0] if scores_this_race else ""
 
+    # ── Podiums — derived from per-race rankings above, same source Race Breakdown
+    # uses. Replaces the Podiums worksheet read so the two pages can't drift apart
+    # (e.g. when the Podiums sheet lags behind a newly-entered race's scores).
+    data["podiums"] = [
+        {
+            "race":   race["name"],
+            "first":  race["ranking"][0][0] if len(race["ranking"]) > 0 else "",
+            "second": race["ranking"][1][0] if len(race["ranking"]) > 1 else "",
+            "third":  race["ranking"][2][0] if len(race["ranking"]) > 2 else "",
+        }
+        for race in races_done
+    ]
+
     # ── Position history — from Reference Tables (read in read_workbook) ──────
     pos_race_names      = data.get("pos_race_names", [])
     standings_positions = data.get("standings_positions", {})
@@ -429,6 +512,7 @@ def compute(data):
         m["positions"] = positions
 
     # ── Chip usage per manager ───────────────────────────────────────────────
+    chip_race_usage = data.get("chip_race_usage", {})
     for m in managers_sorted:
         name = m["name"]
         used = chips_used.get(name, {})
@@ -438,6 +522,8 @@ def compute(data):
                           f"{len(used_list)} chips" if used_list else None)
         m["chip_bg"] = CHIP_STYLES[used_list[0]]["bg"] if len(used_list) == 1 else None
         m["chip_tc"] = CHIP_STYLES[used_list[0]]["tc"] if len(used_list) == 1 else None
+        # Per-race chip: {race_name: chip_name} — only races where chip was actually used
+        m["chip_by_race"] = chip_race_usage.get(name, {})
 
     # ── Budget data ──────────────────────────────────────────────────────────
     for m in managers_sorted:
@@ -468,27 +554,40 @@ def compute(data):
     best_avg  = max(managers_sorted, key=lambda m: m["avg"])
     worst_avg = min(managers_sorted, key=lambda m: m["avg"])
 
-    # Most consistent = lowest std dev of positions
+    # Most consistent = lowest std dev of per-race finish positions (not overall standings)
+    # Compute per-race finish position for each manager from scores
     import statistics
-    def pos_std(m):
-        if len(m["positions"]) < 2:
+    for m in managers_sorted:
+        race_finishes = []
+        for race in races_done:
+            rname = race["name"]
+            scores_this = {mm["name"]: mm["scores"].get(rname) for mm in managers_sorted
+                          if mm["scores"].get(rname) is not None}
+            if m["name"] in scores_this:
+                sorted_scores = sorted(scores_this.items(), key=lambda x: -x[1])
+                pos_map = {n: i+1 for i, (n,_) in enumerate(sorted_scores)}
+                race_finishes.append(pos_map[m["name"]])
+        m["race_finishes"] = race_finishes
+
+    def finish_std(m):
+        valid = m.get("race_finishes", [])
+        if len(valid) < 2:
             return 99
-        valid = [p for p in m["positions"] if p is not None]
-        return statistics.stdev(valid) if len(valid) >= 2 else 99
+        return statistics.stdev(valid)
 
-    most_consistent = min(managers_sorted, key=pos_std)
-    pos_desc = ", ".join(f"P{p}" for p in most_consistent["positions"] if p)
+    most_consistent = min(managers_sorted, key=finish_std)
+    pos_desc = ", ".join(f"P{p}" for p in most_consistent["race_finishes"])
 
-    # Biggest swing = largest NET position change R1 -> latest (using overall standings)
+    # Biggest swing = largest overall standings position change between consecutive races
     biggest_swing_val = 0
     biggest_swing_m = managers_sorted[0]
     for m in managers_sorted:
-        for i in range(1, len(m["positions"])):
-            if m["positions"][i] and m["positions"][i-1]:
-                swing = abs(m["positions"][i] - m["positions"][i-1])
-                if swing > biggest_swing_val:
-                    biggest_swing_val = swing
-                    biggest_swing_m = m
+        pos = [p for p in m["positions"] if p is not None]
+        for i in range(1, len(pos)):
+            swing = abs(pos[i] - pos[i-1])
+            if swing > biggest_swing_val:
+                biggest_swing_val = swing
+                biggest_swing_m = m
 
     data["highlights"] = {
         "best":            best,
@@ -517,7 +616,7 @@ def js(v):
     if isinstance(v, bool): return "true" if v else "false"
     if isinstance(v, str):  return "'" + v.replace("'", "\\'") + "'"
     if isinstance(v, list): return "[" + ",".join(js(x) for x in v) + "]"
-    if isinstance(v, dict): return "{" + ",".join(f"{k}:{js(vv)}" for k, vv in v.items()) + "}"
+    if isinstance(v, dict): return "{" + ",".join(f'"{k}":{js(vv)}' for k, vv in v.items()) + "}"
     return str(v)
 
 def chip_pill(label, bg, tc, small=False):
@@ -539,12 +638,33 @@ def panel_leaderboard(data):
     gap_span = leader - last
 
     # Latest podiums line
+    medal_pill_styles = [
+        "background:#2a2200;border:1px solid #FFD700;color:#FFD700",
+        "background:#1e1e1e;border:1px solid #C0C0C0;color:#C0C0C0",
+        "background:#221a12;border:1px solid #CD7F32;color:#CD7F32",
+    ]
+    medal_labels = ["1st", "2nd", "3rd"]
     pod_cards = ""
-    for pod in data["podiums"]:
-        if pod["first"] or pod["second"] or pod["third"]:
-            pod_cards += (f'<div class="podium-card"><div class="podium-pos">{pod["race"]}</div>'
-                          f'<div class="podium-name">1st {pod["first"]} &nbsp; '
-                          f'2nd {pod["second"]} &nbsp; 3rd {pod["third"]}</div></div>')
+    for pod in [p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]:
+        names = [pod["first"], pod["second"], pod["third"]]
+        if any(names):
+            slots_html = ""
+            for idx, name in enumerate(names):
+                if name:
+                    mgr_color = MANAGER_COLOURS.get(name, "#888")
+                    slots_html += (
+                        f'<span style="display:inline-flex;align-items:center;gap:5px;'
+                        f'{medal_pill_styles[idx]};border-radius:5px;padding:2px 7px;font-size:11px;font-weight:500;white-space:nowrap">'
+                        f'<span style="font-size:10px;color:inherit;opacity:0.75">{medal_labels[idx]}</span>'
+                        f'<span style="color:{mgr_color}">{name}</span>'
+                        f'</span>'
+                    )
+            pod_cards += (
+                f'<div class="podium-card">'
+                f'<div class="podium-pos">{pod["race"]}</div>'
+                f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">{slots_html}</div>'
+                f'</div>'
+            )
 
     # Standings rows
     medal_styles = [
@@ -556,11 +676,10 @@ def panel_leaderboard(data):
     for i, m in enumerate(M):
         pct   = round(m["total"] / leader * 100, 1) if leader else 0
         medal = medal_styles[i] if i < 3 else "background:#2a2a2a;color:#888"
-        pill  = chip_pill(m["chip_label"], m["chip_bg"], m["chip_tc"]) if m["chip_label"] else ""
         gap   = "Leader" if i == 0 else str(M[i]["total"] - M[0]["total"])
         rows_html += f"""<div class="row">
   <div class="pos-badge" style="{medal}">{i+1}</div>
-  <div><div class="manager-name">{m['name']}{pill}</div><div class="team-name">{m['team']}</div>
+  <div><div class="manager-name">{m['name']}</div><div class="team-name">{m['team']}</div>
   <div class="bar-bg"><div class="bar-fill" style="width:{pct}%;background:{m['color']}"></div></div></div>
   <div class="gap-col">{gap}</div>
   <div class="pts-col">{m['total']}</div>
@@ -660,9 +779,14 @@ def panel_race_breakdown(data):
             pct = round(max(0, pts) / max_pts * 100) if max_pts > 0 else 0
             bg  = ["#FFD700","#C0C0C0","#CD7F32"][j] if j < 3 else "#2a2a2a"
             tc  = ["#7a5800","#4a4a4a","#5a2d00"][j] if j < 3 else "#888"
+            race_chip = mm["chip_by_race"].get(rname)
+            if race_chip and race_chip in CHIP_STYLES:
+                pill = chip_pill(race_chip, CHIP_STYLES[race_chip]["bg"], CHIP_STYLES[race_chip]["tc"], small=True)
+            else:
+                pill = ""
             score_rows += (f'<div class="score-row">'
                            f'<div class="pos-dot" style="background:{bg};color:{tc}">{j+1}</div>'
-                           f'<div><div class="score-name">{mm["name"]}</div>'
+                           f'<div><div class="score-name">{mm["name"]}{pill}</div>'
                            f'<div class="bar-bg"><div class="bar-fill" style="width:{pct}%;background:{mm["color"]}"></div></div></div>'
                            f'<div class="score-pts">{pts}</div></div>')
 
@@ -701,18 +825,60 @@ def panel_race_breakdown(data):
 <div class="section-label">Round by round</div>
 {race_cards_html}
 <div class="section-label">Points per race — all managers</div>
-<div style="position:relative;height:300px"><canvas id="barChart"></canvas></div>
+<div style="position:relative;height:300px">
+  <div id="barChartYAxis" style="position:absolute;top:0;left:0;width:48px;height:100%;z-index:2;background:#0f0f0f;pointer-events:none"></div>
+  <div id="barChartScroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;height:100%;padding-left:48px;box-sizing:border-box">
+    <div style="position:relative;height:100%;min-width:{max(len(race_labels)*90, 400)}px">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+</div>
 <div class="legend" id="legend-race"></div>
 <script>
 (function(){{
-new Chart(document.getElementById('barChart'),{{
+const nRaces={len(race_labels)};
+const chart=new Chart(document.getElementById('barChart'),{{
   type:'bar',
   data:{{labels:{js(race_labels)},datasets:{js(bar_datasets)}}},
   options:{{responsive:true,maintainAspectRatio:false,
+    layout:{{padding:{{top:10,left:0}}}},
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}} pts`}}}}}},
-    scales:{{x:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
-             y:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
+    scales:{{
+      x:{{ticks:{{color:'#888',maxRotation:30}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+      y:{{ticks:{{color:'#888',display:false}},grid:{{color:'rgba(255,255,255,0.06)'}},border:{{display:false}}}}
+    }}}}
 }});
+function freezeYAxis(){{
+  const yAxis=document.getElementById('barChartYAxis');
+  const cvs=document.getElementById('barChart');
+  const scale=chart.scales.y;
+  if(!scale)return;
+  const dpr=window.devicePixelRatio||1;
+  const cssH=cvs.clientHeight||300;
+  const fc=document.createElement('canvas');
+  fc.width=48*dpr; fc.height=cssH*dpr;
+  fc.style.width='48px'; fc.style.height=cssH+'px';
+  const ctx2=fc.getContext('2d');
+  ctx2.scale(dpr,dpr);
+  ctx2.fillStyle='#0f0f0f';
+  ctx2.fillRect(0,0,48,cssH);
+  const ticks=scale.ticks;
+  const top=scale.top; const bottom=scale.bottom;
+  const range=bottom-top;
+  const vMin=scale.min; const vMax=scale.max;
+  ticks.forEach(t=>{{
+    const v=t.value;
+    const yPx=top+((vMax-v)/(vMax-vMin))*range;
+    ctx2.fillStyle='#888';
+    ctx2.font='11px -apple-system,BlinkMacSystemFont,sans-serif';
+    ctx2.textAlign='right';
+    ctx2.fillText(t.label,44,yPx+4);
+  }});
+  yAxis.innerHTML='';
+  yAxis.appendChild(fc);
+}}
+chart.options.animation={{onComplete:freezeYAxis}};
+chart.update();
 document.getElementById('legend-race').innerHTML={js(legend_html)};
 }})();
 </script>"""
@@ -726,19 +892,28 @@ def panel_h2h(data):
     manager_data_js = {}
     for m in M:
         manager_data_js[m["name"]] = {
-            "team":    m["team"],
-            "color":   m["color"],
-            "pos":     m["rank"],
-            "total":   m["total"],
-            "races":   [m["scores"].get(r["name"], 0) for r in RD],
-            "podiums": [1 if any(
-                           pod["race"] == r["name"] and
-                           pod[pos_key] == m["name"]
-                           for pod in data["podiums"]
-                           for pos_key in ["first","second","third"]
-                         ) else 0
-                        for r in RD],
-            "chips":   {c: m["chips"].get(c, False) for c in CHIP_ORDER},
+            "team":      m["team"],
+            "color":     m["color"],
+            "pos":       m["rank"],
+            "total":     m["total"],
+            "races":     [m["scores"].get(r["name"], 0) for r in RD],
+            "podiums":   [1 if any(
+                             pod["race"] == r["name"] and
+                             pod[pos_key] == m["name"]
+                             for pod in data["podiums"]
+                             for pos_key in ["first","second","third"]
+                           ) else 0
+                          for r in RD],
+            "wins":      [1 if any(
+                             pod["race"] == r["name"] and pod["first"] == m["name"]
+                             for pod in data["podiums"]
+                           ) else 0
+                          for r in RD],
+            "chips":     {c: m["chips"].get(c, False) for c in CHIP_ORDER},
+            "chipLabel":   m["chip_label"],
+            "chipBg":      m["chip_bg"],
+            "chipTc":      m["chip_tc"],
+            "chipByRace":  m["chip_by_race"],   # {race_name: chip_name}
         }
 
     names_js = js(list(manager_data_js.keys()))
@@ -754,9 +929,9 @@ def panel_h2h(data):
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Head-to-Head Comparison</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap">
-  <div style="display:flex;align-items:center;gap:8px"><label>Manager A</label><select id="selA" onchange="syncSelects('A')"></select></div>
+  <div style="display:flex;align-items:center;gap:8px"><label>Manager A</label><select id="selA" onchange="ucH2HSync('A')"></select></div>
   <div style="font-size:13px;color:#888;font-weight:500">vs</div>
-  <div style="display:flex;align-items:center;gap:8px"><label>Manager B</label><select id="selB" onchange="syncSelects('B')"></select></div>
+  <div style="display:flex;align-items:center;gap:8px"><label>Manager B</label><select id="selB" onchange="ucH2HSync('B')"></select></div>
 </div>
 <div id="vs-header" class="vs-header"></div>
 <div class="section-label" style="margin-top:0">Season stats</div>
@@ -770,7 +945,8 @@ def panel_h2h(data):
 <script>
 (function(){{
 const chips={chips_js};
-const data={data_js};
+const chipStyles={js({c: {"bg": CHIP_STYLES[c]["bg"], "tc": CHIP_STYLES[c]["tc"]} for c in CHIP_ORDER})};
+const mgrs={data_js};
 const raceNames={race_names_js};
 const names={names_js};
 let chart=null;
@@ -781,6 +957,7 @@ function populateSelect(sel,exclude,cur){{
   if(!sel.value)sel.value=sel.options[0].value;
 }}
 function syncSelects(changed){{if(changed==='A')populateSelect(selB,selA.value,selB.value);else populateSelect(selA,selB.value,selA.value);render();}}
+window.ucH2HSync=syncSelects;
 populateSelect(selA,null,names[0]);
 if(names.length>1)populateSelect(selB,names[0],names[1]);
 else populateSelect(selB,null,names[0]);
@@ -788,9 +965,15 @@ function tickSvg(used,color){{
   if(used)return`<div class="tick" style="background:${{color}}22"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="${{color}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`;
   return`<div class="tick" style="background:#1e1e1e"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4 4l4 4M8 4l-4 4" stroke="#555" stroke-width="1.5" stroke-linecap="round"/></svg></div>`;
 }}
+function raceChipPill(mgr, raceName){{
+  const label=mgr.chipByRace&&mgr.chipByRace[raceName];
+  if(!label)return'';
+  const st=chipStyles[label]||{{bg:'#222',tc:'#aaa'}};
+  return`<span style="display:inline-block;font-size:9px;padding:1px 5px;border-radius:20px;font-weight:500;margin-left:4px;background:${{st.bg}};color:${{st.tc}}">${{label}}</span>`;
+}}
 function render(){{
-  const nA=selA.value,nB=selB.value,A=data[nA],B=data[nB];
-  const aRW=A.races.filter((r,i)=>r>B.races[i]).length,bRW=B.races.filter((r,i)=>r>A.races[i]).length;
+  const nA=selA.value,nB=selB.value,A=mgrs[nA],B=mgrs[nB];
+  const aRW=A.wins.reduce((s,v)=>s+v,0),bRW=B.wins.reduce((s,v)=>s+v,0);
   const aP=A.podiums.reduce((s,v)=>s+v,0),bP=B.podiums.reduce((s,v)=>s+v,0);
   const aL=A.total>=B.total;
   document.getElementById('vs-header').innerHTML=`
@@ -811,13 +994,17 @@ function render(){{
     `<div class="chip-row" style="padding:10px 0"><div style="font-size:11px;font-weight:500;color:${{A.color}};text-align:center">${{nA}}<br><span style="font-size:10px;color:#888;font-weight:400">${{aU}} used</span></div><div style="font-size:11px;color:#888;text-align:center">Chip</div><div style="font-size:11px;font-weight:500;color:${{B.color}};text-align:center">${{nB}}<br><span style="font-size:10px;color:#888;font-weight:400">${{bU}} used</span></div></div>`+
     chips.map(c=>`<div class="chip-row"><div style="display:flex;justify-content:center">${{tickSvg(A.chips[c.key],A.color)}}</div><div style="text-align:center"><span class="chip-pill" style="background:${{c.bg}};color:${{c.tc}}">${{c.label}}</span><div style="font-size:10px;color:#555;margin-top:3px">${{c.desc}}</div></div><div style="display:flex;justify-content:center">${{tickSvg(B.chips[c.key],B.color)}}</div></div>`).join('');
   const maxP=Math.max(...[...A.races,...B.races].map(Math.abs),1);
+  function chipPill(m){{
+    if(!m.chipLabel)return'';
+    return`<span style="display:inline-block;font-size:9px;padding:1px 5px;border-radius:20px;font-weight:500;margin-left:4px;background:${{m.chipBg}};color:${{m.chipTc}}">${{m.chipLabel}}</span>`;
+  }}
   document.getElementById('race-rows').innerHTML=raceNames.map((race,i)=>{{
     const ap=A.races[i],bp=B.races[i],aW=ap>bp;
     const aPct=Math.round(Math.abs(ap)/maxP*100),bPct=Math.round(Math.abs(bp)/maxP*100);
     return`<div class="race-row">
-      <div style="text-align:right"><div style="font-size:14px;font-weight:500;color:${{aW?A.color:'#888'}}">${{ap}}</div><div style="display:flex;justify-content:flex-end;margin-top:4px"><div style="height:6px;border-radius:3px;width:${{aPct}}%;background:${{A.color}};opacity:${{aW?1:0.4}}"></div></div></div>
+      <div style="text-align:right"><div style="font-size:14px;font-weight:500;color:${{aW?A.color:'#888'}}">${{ap}}</div><div style="font-size:10px;margin-top:2px;text-align:right">${{raceChipPill(A,race)}}</div><div style="display:flex;justify-content:flex-end;margin-top:4px"><div style="height:6px;border-radius:3px;width:${{aPct}}%;background:${{A.color}};opacity:${{aW?1:0.4}}"></div></div></div>
       <div class="race-label">${{race}}</div>
-      <div><div style="font-size:14px;font-weight:500;color:${{!aW?B.color:'#888'}}">${{bp}}</div><div style="display:flex;margin-top:4px"><div style="height:6px;border-radius:3px;width:${{bPct}}%;background:${{B.color}};opacity:${{!aW?1:0.4}}"></div></div></div></div>`;
+      <div><div style="font-size:14px;font-weight:500;color:${{!aW?B.color:'#888'}}">${{bp}}</div><div style="font-size:10px;margin-top:2px">${{raceChipPill(B,race)}}</div><div style="display:flex;margin-top:4px"><div style="height:6px;border-radius:3px;width:${{bPct}}%;background:${{B.color}};opacity:${{!aW?1:0.4}}"></div></div></div></div>`;
   }}).join('');
   const cumA=A.races.reduce((acc,v)=>[...acc,acc[acc.length-1]+v],[0]);
   const cumB=B.races.reduce((acc,v)=>[...acc,acc[acc.length-1]+v],[0]);
@@ -878,22 +1065,68 @@ def panel_budget(data):
             "fill": False, "tension": 0.2
         })
 
-    # Budget change per race chart
+    # Budget change per race — HTML table (no canvas, no lifecycle issues)
     max_races = max((len(m["budgets"]) for m in M), default=1)
-    change_labels = b_races[1:max_races] if len(b_races) >= max_races else []
-    change_datasets = []
+    # Only show races that have actually completed (budget data exists for all managers)
+    # change index i means: budgets[i] - budgets[i-1], so race label is budget_race_names[i]
+    n_change_cols = max_races - 1  # number of completed race changes
+    change_race_names = b_races[1:max_races] if len(b_races) >= max_races else b_races[1:]
+
+    # Build per-manager change lists (only completed races)
+    manager_changes = []
     for m in M:
         changes = [round(m["budgets"][i] - m["budgets"][i-1], 2)
                    for i in range(1, len(m["budgets"]))]
-        change_datasets.append({"label": m["name"], "data": changes,
-                                 "backgroundColor": m["color"], "borderWidth": 0})
+        manager_changes.append((m, changes))
+
+    # Build table header
+    race_th = "".join(
+        f'<th style="font-size:10px;color:#555;font-weight:500;text-align:right;padding:4px 8px;white-space:nowrap">{rn}</th>'
+        for rn in change_race_names)
+
+    # Build table rows
+    table_rows = ""
+    for m, changes in manager_changes:
+        cells = ""
+        for c in changes:
+            if c > 0:
+                color = "#1D9E75"; sign = "+"
+            elif c < 0:
+                color = "#E24B4A"; sign = ""
+            else:
+                color = "#555"; sign = ""
+            cells += f'<td style="font-size:12px;font-weight:500;color:{color};text-align:right;padding:5px 8px;white-space:nowrap">{sign}{c:.1f}m</td>'
+        table_rows += f"""<tr style="border-bottom:0.5px solid #2a2a2a">
+  <td style="padding:5px 8px;white-space:nowrap;position:sticky;left:0;background:#1a1a1a;z-index:1">
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:8px;height:8px;border-radius:50%;background:{m['color']};flex-shrink:0"></div>
+      <span style="font-size:13px;font-weight:500">{m['name']}</span>
+    </div>
+  </td>
+  {cells}
+</tr>"""
+
+    budget_change_html = f"""<div class="card" style="padding:4px 0;overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <table style="border-collapse:collapse;min-width:max(100%,{max(len(change_race_names)*90+120, 300)}px)">
+    <thead>
+      <tr style="border-bottom:0.5px solid #2a2a2a">
+        <th style="font-size:10px;color:#555;font-weight:500;text-align:left;padding:4px 8px;position:sticky;left:0;background:#1a1a1a;z-index:1;min-width:90px">Manager</th>
+        {race_th}
+      </tr>
+    </thead>
+    <tbody>{table_rows}</tbody>
+  </table>
+</div>"""
 
     legend_html = "".join(
         f'<span><span style="width:10px;height:10px;border-radius:2px;background:{m["color"]};display:inline-block"></span>{m["name"]}</span>'
         for m in M)
 
-    y_min = max(80, int(min_b) - 4)
-    y_max = min(120, int(max_b) + 4)
+    import math
+    y_max = math.ceil((max_b + 2) / 2) * 2   # next even number at least 2m above highest budget
+    y_min = math.floor((min_b - 2) / 2) * 2  # next even number at least 2m below lowest budget
+    y_min = max(80, y_min)   # never go below 80m
+    y_max = min(120, y_max)  # never go above 120m
 
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Budget Tracker · Team values across the season</div>
@@ -915,7 +1148,7 @@ def panel_budget(data):
 <div style="position:relative;height:280px"><canvas id="budgetChart"></canvas></div>
 <div class="legend" id="legend-budget"></div>
 <div class="section-label">Budget change per race</div>
-<div style="position:relative;height:300px"><canvas id="changeChart"></canvas></div>
+{budget_change_html}
 <script>
 (function(){{
 new Chart(document.getElementById('budgetChart'),{{
@@ -925,14 +1158,6 @@ new Chart(document.getElementById('budgetChart'),{{
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y.toFixed(1)}}m`}}}}}},
     scales:{{x:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
              y:{{min:{y_min},max:{y_max},ticks:{{color:'#888',callback:v=>v.toFixed(0)+'m'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
-}});
-new Chart(document.getElementById('changeChart'),{{
-  type:'bar',
-  data:{{labels:{js(change_labels)},datasets:{js(change_datasets)}}},
-  options:{{responsive:true,maintainAspectRatio:false,
-    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>{{const v=ctx.parsed.y;return` ${{ctx.dataset.label}}: ${{v>0?'+':''}}${{v.toFixed(1)}}m`;}}}}}}}},
-    scales:{{x:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
-             y:{{ticks:{{color:'#888',callback:v=>(v>0?'+':'')+v.toFixed(1)+'m'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
 }});
 document.getElementById('legend-budget').innerHTML={js(legend_html)};
 }})();
@@ -961,6 +1186,14 @@ def panel_podiums(data):
     def get_color(name):
         return MANAGER_COLOURS.get(name, "#888")
 
+    def get_chip_pill(name, race_name):
+        m = next((mm for mm in M if mm["name"] == name), None)
+        if m:
+            chip = m["chip_by_race"].get(race_name)
+            if chip and chip in CHIP_STYLES:
+                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True)
+        return ""
+
     cards_html = ""
     for pod in POD:
         filled = pod["first"] or pod["second"] or pod["third"]
@@ -969,12 +1202,11 @@ def panel_podiums(data):
         for j, (key, pts_key) in enumerate([("first",""), ("second",""), ("third","")]):
             name = pod[key]
             if name:
-                # Find points for this manager in this race
                 pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
                 pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
                           f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
-                          f'<div><div class="slot-name" style="color:{get_color(name)}">{name}</div>{pts_html}</div></div>')
+                          f'<div><div class="slot-name" style="color:{get_color(name)}">{name}{get_chip_pill(name, pod["race"])}</div>{pts_html}</div></div>')
             else:
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
                           f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
@@ -999,8 +1231,6 @@ def panel_podiums(data):
   <div class="mc"><div class="mc-val">{diff_winners}</div><div class="mc-lbl">Different race winners</div></div>
   <div class="mc"><div class="mc-val">{len(M) - managers_with_pod}</div><div class="mc-lbl">Managers without a podium</div></div>
 </div>
-<div class="section-label">Race results</div>
-{cards_html}
 <div class="section-label">Podium share</div>
 <div style="position:relative;height:260px"><canvas id="podiumChart"></canvas></div>
 <div class="legend" id="legend-podiums"></div>
@@ -1023,7 +1253,9 @@ document.getElementById('legend-podiums').innerHTML=`
   <span><span style="width:10px;height:10px;border-radius:2px;background:#C0C0C0;display:inline-block"></span>2nd place</span>
   <span><span style="width:10px;height:10px;border-radius:2px;background:#CD7F32;display:inline-block"></span>3rd place</span>`;
 }})();
-</script>"""
+</script>
+<div class="section-label">Race results</div>
+{cards_html}"""
 
 
 # ── 06 Stats ─────────────────────────────────────────────────────────────────
@@ -1032,19 +1264,20 @@ def panel_stats(data):
     ND  = data["n_done"]
     HL  = data["highlights"]
 
-    total_race_scores = sum(len(m["scores"]) for m in M)
+    total_race_scores = len(data["races_done"])
     chips_used_count  = sum(1 for m in M for c in CHIP_ORDER if m["chips"].get(c))
 
     # Finish distribution table
+    N_FIN = data.get("n_finish_cols", len(M))
+
     pos_headers = "".join(
         f'<div style="font-size:9px;color:#555;text-align:center">P{i}</div>'
-        for i in range(1, 10))
+        for i in range(1, N_FIN + 1))
     finish_rows_html = ""
     for m in M:
-        fd = data["finish_dist"].get(m["name"], [0]*9)
-        pill = chip_pill(m["chip_label"], m["chip_bg"], m["chip_tc"], small=True) if m["chip_label"] else ""
+        fd = data["finish_dist"].get(m["name"], [0]*N_FIN)
         cells = ""
-        for i, v in enumerate(fd):
+        for i, v in enumerate(fd[:N_FIN]):
             if v == 0:
                 cls = "f0"
             elif i == 0: cls = "f1"
@@ -1054,7 +1287,7 @@ def panel_stats(data):
             cells += f'<div style="display:flex;justify-content:center"><div class="fin {cls}">{v if v else ""}</div></div>'
         finish_rows_html += f"""<div class="srow">
   <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:{m['color']}"></div></div>
-  <div class="sname">{m['name']}{pill}</div>
+  <div class="sname">{m['name']}</div>
   {cells}<div class="total-pts">{m['total']}</div>
 </div>"""
 
@@ -1096,8 +1329,11 @@ def panel_stats(data):
         hl_row(swing_m["name"], ["Biggest position swing", f"{swing_val} places"])
     )
 
+    fin_grid = f"26px minmax(70px,1fr) repeat({N_FIN},26px) 36px"
+
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Stats · Season overview &amp; highlights</div>
+<style>.srow{{display:grid;grid-template-columns:{fin_grid};align-items:center;gap:5px;padding:7px 0;border-bottom:0.5px solid #2a2a2a;min-width:420px}}</style>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{total_race_scores}</div><div class="mc-lbl">Races scored so far</div></div>
   <div class="mc"><div class="mc-val">{chips_used_count}</div><div class="mc-lbl">Chips used league-wide</div></div>
@@ -1105,8 +1341,8 @@ def panel_stats(data):
   <div class="mc"><div class="mc-val">{swing_m['name']}</div><div class="mc-lbl">Biggest swing ({swing_val} places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
-<div class="card">
-  <div style="display:grid;grid-template-columns:26px 1fr repeat(9,26px) 36px;gap:5px;padding:6px 0 2px">
+<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <div style="display:grid;grid-template-columns:{fin_grid};gap:5px;padding:6px 0 2px;min-width:420px">
     <div></div><div></div>{pos_headers}<div style="font-size:9px;color:#555;text-align:right">Pts</div>
   </div>
   {finish_rows_html}
@@ -1126,87 +1362,155 @@ def panel_positions(data):
     if ND == 0:
         return "<h1>🏎 The Undercut Collective</h1><div class='subtitle'>Position Changes · No races complete yet</div>"
 
-    # Most gained / lost
-    gains = [(m["name"], m["positions"][0] - m["positions"][-1])
-             for m in M if m["positions"] and m["positions"][-1]]
-    most_gained  = max(gains, key=lambda x:  x[1]) if gains else ("—", 0)
-    most_lost    = min(gains, key=lambda x:  x[1]) if gains else ("—", 0)
-    unchanged    = sum(1 for m in M if m["positions"] and len(set(m["positions"])) == 1)
+    # Most gained / lost in a SINGLE race (not overall)
+    best_single  = ("—", 0, "—")   # (manager, gain, race_name)
+    worst_single = ("—", 0, "—")   # (manager, loss, race_name)
+    for m in M:
+        for ri in range(1, len(m["positions"])):
+            prev = m["positions"][ri - 1]
+            curr = m["positions"][ri]
+            if prev is None or curr is None:
+                continue
+            change = prev - curr   # positive = moved up
+            race_name = RD[ri]["name"] if ri < len(RD) else "—"
+            if change > best_single[1]:
+                best_single  = (m["name"], change, race_name)
+            if change < worst_single[1]:
+                worst_single = (m["name"], change, race_name)
 
-    # Build standings table sorted by current position
-    sorted_cur = sorted(M, key=lambda m: m["positions"][-1] if m["positions"] else 99)
-    rows_html = ""
-    for m in sorted_cur:
+    # Longest streak at current position
+    streak_best = ("—", 0)   # (manager, streak_length)
+    for m in M:
         if not m["positions"]:
             continue
-        pos_r1  = m["positions"][0]
-        pos_cur = m["positions"][-1]
-        net     = pos_r1 - pos_cur   # positive = moved up
-        if net > 0:
-            net_html = (f'<span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;'
-                        f'border-right:4px solid transparent;border-bottom:6px solid #1D9E75;margin-right:3px;vertical-align:middle"></span>'
-                        f'<span style="color:#1D9E75">+{net}</span>')
-        elif net < 0:
-            net_html = (f'<span style="display:inline-block;width:0;height:0;border-left:4px solid transparent;'
-                        f'border-right:4px solid transparent;border-top:6px solid #E24B4A;margin-right:3px;vertical-align:middle"></span>'
-                        f'<span style="color:#E24B4A">{net}</span>')
+        cur_pos = m["positions"][-1]
+        if cur_pos is None:
+            continue
+        streak = 0
+        for p in reversed(m["positions"]):
+            if p == cur_pos:
+                streak += 1
+            else:
+                break
+        if streak > streak_best[1]:
+            streak_best = (m["name"], streak)
+
+    last_race_name = RD[-1]["name"] if RD else "—"
+
+    # ── Standings movement table — clean card per manager ───────────────────
+    # Sorted by current (latest) position
+    sorted_cur = sorted(M, key=lambda m: (m["positions"][-1] if m["positions"] and m["positions"][-1] is not None else 99))
+
+    # Header row: race name + round number above each badge column
+    # Use first word of race name as abbreviation to keep it compact
+    def short_race(name):
+        # Use up to first 7 chars of first word, handles "Australia", "China", "Great Britain" → "Great"
+        return name.split()[0][:7]
+
+    header_badges = "".join(
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:1px;width:28px;flex-shrink:0">'
+        f'<div style="font-size:8px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34px;text-align:center">{short_race(race["name"])}</div>'
+        f'<div style="font-size:9px;color:#444">R{race["round"]}</div>'
+        f'</div>'
+        for race in RD
+    )
+    min_row_w = 80 + 34 * len(RD) + 80
+    header_row = (
+        f'<div style="display:flex;align-items:flex-end;gap:12px;padding:6px 0 4px;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,{min_row_w}px)">'
+        f'<div style="width:10px;flex-shrink:0"></div>'
+        f'<div style="min-width:60px;flex-shrink:0"></div>'
+        f'<div style="display:flex;gap:6px;flex:1">{header_badges}</div>'
+        f'<div style="min-width:52px;text-align:right;flex-shrink:0;font-size:9px;color:#555;font-weight:500;text-transform:uppercase;letter-spacing:.04em">Last race</div>'
+        f'</div>'
+    )
+
+    rows_html = ""
+    for m in sorted_cur:
+        if not m["positions"] or m["positions"][-1] is None:
+            continue
+        pos_cur   = m["positions"][-1]
+        # Net = change since previous race (last two non-None positions)
+        non_none  = [p for p in m["positions"] if p is not None]
+        if len(non_none) >= 2:
+            net = non_none[-2] - non_none[-1]   # positive = moved up
         else:
-            net_html = '<span style="display:inline-block;width:8px;height:2px;background:#555;margin-right:3px;vertical-align:middle;border-radius:1px"></span><span style="color:#888">—</span>'
+            net = 0
 
-        pos_cols = "".join(
-            f'<div style="display:flex;justify-content:center">'
-            f'<div style="font-size:13px;font-weight:500;color:{m["color"]};text-align:center;width:40px">P{p}</div>'
-            f'</div>'
-            for p in m["positions"] if p is not None)
+        # Net movement badge
+        if net > 0:
+            net_html = f'<span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +{net}</span>'
+        elif net < 0:
+            net_html = f'<span style="color:#E24B4A;font-size:13px;font-weight:600">▼ {net}</span>'
+        else:
+            net_html = '<span style="color:#555;font-size:13px;font-weight:500">— 0</span>'
 
-        rows_html += f"""<div class="change-row">
-  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:{m['color']}"></div></div>
-  <div class="mname">{m['name']}</div>
-  {pos_cols}
-  <div class="net-badge">{net_html}</div>
+        # Race-by-race position badges (all races, skip Nones)
+        race_badges = ""
+        for ri, (race, pos) in enumerate(zip(RD, m["positions"])):
+            if pos is None:
+                continue
+            is_cur = (ri == len(m["positions"]) - 1)
+            bg = m["color"] if is_cur else "#1e1e1e"
+            tc = "#0f0f0f" if is_cur else m["color"]
+            race_badges += (
+                f'<div style="display:flex;flex-direction:column;align-items:center;gap:2px">'
+                f'<div style="width:28px;height:28px;border-radius:6px;background:{bg};border:1.5px solid {m["color"]};'
+                f'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:{tc}">P{pos}</div>'
+                f'</div>'
+            )
+
+        rows_html += f"""<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,{min_row_w}px)">
+  <div style="width:10px;height:10px;border-radius:50%;background:{m['color']};flex-shrink:0"></div>
+  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">{m['name']}</div>
+  <div style="display:flex;gap:6px;flex:1">{race_badges}</div>
+  <div style="min-width:52px;text-align:right;flex-shrink:0">{net_html}</div>
 </div>"""
 
-    # Position timeline chart
+    # ── Position timeline chart ───────────────────────────────────────────────
     race_labels = [r["name"] for r in RD]
     datasets = []
     for i, m in enumerate(M):
         if not m["positions"]:
             continue
+        # Convert None → null for JS; Chart.js will gap them with spanGaps:false
+        # Use actual values only — Chart.js handles nulls fine with spanGaps:true
+        pts = [p if p is not None else "null" for p in m["positions"]]
+        pts_js = "[" + ",".join(str(p) for p in pts) + "]"
         dash = DASH_PATTERNS[i % len(DASH_PATTERNS)]
         datasets.append({
-            "label": m["name"], "data": m["positions"],
-            "borderColor": m["color"], "borderDash": dash,
-            "borderWidth": 2.5, "pointBackgroundColor": m["color"],
-            "pointRadius": 6, "pointHoverRadius": 8,
-            "fill": False, "tension": 0
+            "__name":       m["name"],
+            "__pts":        pts_js,   # pre-rendered, not via js()
+            "__color":      m["color"],
+            "__dash":       js(dash),
         })
 
     legend_html = "".join(
         f'<span><span style="width:10px;height:10px;border-radius:2px;background:{m["color"]};display:inline-block;flex-shrink:0"></span>{m["name"]}</span>'
         for m in M)
 
-    # Dynamic column headers
-    pos_col_headers = "".join(
-        f'<div style="font-size:10px;color:#555;text-align:center">R{r["round"]}</div>'
-        for r in RD)
-
-    col_template = "26px 1fr " + " ".join(["40px"] * ND) + " 64px"
+    # Build datasets JS manually so pts_js goes in unquoted
+    ds_js = "[" + ",".join(
+        f'{{label:{js(d["__name"])},data:{d["__pts"]},borderColor:{js(d["__color"])},'
+        f'borderDash:{d["__dash"]},borderWidth:2.5,pointBackgroundColor:{js(d["__color"])},'
+        f'pointRadius:6,pointHoverRadius:8,fill:false,tension:0,spanGaps:true}}'
+        for d in datasets
+    ) + "]"
 
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Position Changes · How the standings have shifted</div>
 <div class="metric-grid">
-  <div class="mc"><div class="mc-val">{most_gained[1]}</div><div class="mc-lbl">Positions gained (most — {most_gained[0]})</div></div>
-  <div class="mc"><div class="mc-val">{abs(most_lost[1])}</div><div class="mc-lbl">Positions lost (most — {most_lost[0]})</div></div>
-  <div class="mc"><div class="mc-val">{unchanged}</div><div class="mc-lbl">Managers unchanged</div></div>
-  <div class="mc"><div class="mc-val">R{RD[-1]['round'] if RD else '—'}</div><div class="mc-lbl">Most recent race</div></div>
+  <div class="mc"><div class="mc-val">+{best_single[1]}</div><div class="mc-lbl">Biggest single-race climb — {best_single[0]} ({best_single[2]})</div></div>
+  <div class="mc"><div class="mc-val">{worst_single[1]}</div><div class="mc-lbl">Biggest single-race drop — {worst_single[0]} ({worst_single[2]})</div></div>
+  <div class="mc"><div class="mc-val">{streak_best[1]} race{'s' if streak_best[1] != 1 else ''}</div><div class="mc-lbl">Longest position streak — {streak_best[0]}</div></div>
+  <div class="mc"><div class="mc-val">{last_race_name}</div><div class="mc-lbl">Most recent race</div></div>
 </div>
 <div class="section-label">Standings movement</div>
-<div class="card">
-  <div style="display:grid;grid-template-columns:{col_template};gap:10px;padding:6px 0 2px">
-    <div></div><div></div>{pos_col_headers}<div style="font-size:10px;color:#555;text-align:right">Net</div>
-  </div>
+<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div class="card" style="padding:4px 16px">
+  {header_row}
   {rows_html}
-</div>
+  <div style="border-bottom:none;padding-bottom:4px"></div>
+</div></div>
+<div class="hint" style="margin-bottom:1.5rem">Filled badge = current position. Numbers show overall standings after each race.</div>
 <div class="section-label">Position timeline</div>
 <div style="position:relative;height:360px"><canvas id="posChart"></canvas></div>
 <div class="legend" id="legend-positions"></div>
@@ -1214,12 +1518,15 @@ def panel_positions(data):
 (function(){{
 new Chart(document.getElementById('posChart'),{{
   type:'line',
-  data:{{labels:{js(race_labels)},datasets:{js(datasets)}}},
+  data:{{labels:{js(race_labels)},datasets:{ds_js}}},
   options:{{responsive:true,maintainAspectRatio:false,
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: P${{ctx.parsed.y}}`}}}}}},
     scales:{{
-      x:{{ticks:{{color:'#888',font:{{size:13}}}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
-      y:{{reverse:true,min:1,max:{len(M)},ticks:{{color:'#888',stepSize:1,callback:v=>'P'+v}},grid:{{color:'rgba(255,255,255,0.06)'}}}}
+      x:{{ticks:{{color:'#888',font:{{size:12}}}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+      y:{{reverse:true,min:0.5,max:{len(M)}+0.5,
+        afterBuildTicks:function(ax){{ax.ticks=[...[{','.join(str(i) for i in range(1,len(M)+1))}].map(v=>{{return{{value:v}};}})]}},
+        ticks:{{color:'#888',callback:function(v){{const r=Math.round(v);return(r>=1&&r<={len(M)})?'P'+r:'';}}}},
+        grid:{{color:'rgba(255,255,255,0.06)'}}}}
     }}}}
 }});
 document.getElementById('legend-positions').innerHTML={js(legend_html)};
@@ -1229,10 +1536,12 @@ document.getElementById('legend-positions').innerHTML={js(legend_html)};
 
 # ── 08 Team Picks ─────────────────────────────────────────────────────────────
 def panel_picks(data):
-    M  = data["managers_sorted"]
-    RD = data["races_done"]
+    M           = data["managers_sorted"]
+    RD          = data["races_done"]
+    drv_results = data.get("driver_results", {})       # {driver_name: {race_name: pts}}
+    con_results = data.get("constructor_results", {})  # {con_name:    {race_name: pts}}
 
-    # Build available races from lineups
+    # Ordered list of races that have lineup data
     all_lineup_races = sorted(set(
         rname for m in M for rname in m["lineups"].keys()
     ), key=lambda r: next((rd["round"] for rd in data["races"] if rd["name"] == r), 99))
@@ -1241,124 +1550,641 @@ def panel_picks(data):
         return """<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Team Picks · No lineup data available yet</div>"""
 
-    # Driver + constructor popularity across all races available
-    driver_counts = {}
-    con_counts    = {}
-    drs_counts    = {}
+    n_managers = len(M)
+
+    # ── Season-level stats (across all races) ─────────────────────────────────
+    driver_counts_all = {}
+    con_counts_all    = {}
+    drs_counts_all    = {}
 
     for m in M:
         for rname, picks in m["lineups"].items():
             for pick in picks:
-                name = pick["name"]
-                # Crude heuristic: constructors are title-cased single words or known names
-                # Use the fact that drivers have "." in their name (e.g. "G. Russell")
-                is_constructor = "." not in name and len(name.split()) <= 2 and name[0].isupper()
-                # Better: if it's in a constructor list — use the fact drivers have initials
-                is_driver = "." in name
-                if is_driver:
-                    driver_counts[name] = driver_counts.get(name, 0) + 1
-                    if pick["drs"]:
-                        drs_counts[name] = drs_counts.get(name, 0) + 1
+                nm = pick["name"]
+                if pick.get("is_constructor"):
+                    con_counts_all[nm] = con_counts_all.get(nm, 0) + 1
                 else:
-                    con_counts[name] = con_counts.get(name, 0) + 1
+                    driver_counts_all[nm] = driver_counts_all.get(nm, 0) + 1
+                    if pick["drs"]:
+                        drs_counts_all[nm] = drs_counts_all.get(nm, 0) + 1
 
-    top_driver     = max(driver_counts, key=driver_counts.get) if driver_counts else "—"
-    top_con        = max(con_counts,    key=con_counts.get)    if con_counts    else "—"
-    top_drs        = max(drs_counts,    key=drs_counts.get)    if drs_counts    else "—"
-    top_driver_cnt = driver_counts.get(top_driver, 0)
-    top_con_cnt    = con_counts.get(top_con, 0)
-    top_drs_cnt    = drs_counts.get(top_drs, 0)
+    top_driver     = max(driver_counts_all, key=driver_counts_all.get) if driver_counts_all else "—"
+    top_con        = max(con_counts_all,    key=con_counts_all.get)    if con_counts_all    else "—"
+    top_drs        = max(drs_counts_all,    key=drs_counts_all.get)    if drs_counts_all    else "—"
+    top_driver_cnt = driver_counts_all.get(top_driver, 0)
+    top_con_cnt    = con_counts_all.get(top_con, 0)
+    top_drs_cnt    = drs_counts_all.get(top_drs, 0)
 
-    # Build JS teams array per race
+    # ── Per-race JS data ──────────────────────────────────────────────────────
+    # teams_by_race: per race, list of manager picks (with pts per pick, DRS flag)
     teams_by_race = {}
     for rname in all_lineup_races:
         teams_by_race[rname] = []
         for m in M:
             picks = m["lineups"].get(rname, [])
-            if picks:
-                teams_by_race[rname].append({
-                    "name":      m["name"],
-                    "teamName":  m["team"],
-                    "color":     m["color"],
-                    "chip":      {"label": m["chip_label"], "bg": m["chip_bg"], "tc": m["chip_tc"]} if m["chip_label"] else None,
-                    "picks":     picks,
+            if not picks:
+                continue
+            race_pts = sum((p["pts"] or 0) for p in picks)
+            chip_by_race = m.get("chip_by_race", {})
+            chip_name = chip_by_race.get(rname)
+            chip_style = CHIP_STYLES.get(chip_name, {})
+            teams_by_race[rname].append({
+                "name":      m["name"],
+                "teamName":  m["team"],
+                "color":     m["color"],
+                "racePts":   race_pts,
+                "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
+                "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
+                               "pts": p["pts"], "isCon": p["is_constructor"]} for p in picks],
+            })
+        # Sort by race points descending so top scorer shows first
+        teams_by_race[rname].sort(key=lambda t: -t["racePts"])
+
+    # popularity_by_race: {race_name: {"drivers": [(name, count, pts), ...], "cons": [...]}}
+    # Counts how many managers picked each driver/con that race, alongside their actual pts
+    popularity_by_race = {}
+    for rname in all_lineup_races:
+        d_cnt, c_cnt = {}, {}
+        for m in M:
+            for pick in m["lineups"].get(rname, []):
+                nm = pick["name"]
+                if pick.get("is_constructor"):
+                    c_cnt[nm] = c_cnt.get(nm, 0) + 1
+                else:
+                    d_cnt[nm] = d_cnt.get(nm, 0) + 1
+        # Merge in actual points from results tables
+        d_rows = sorted(d_cnt.items(), key=lambda x: -x[1])
+        c_rows = sorted(c_cnt.items(), key=lambda x: -x[1])
+        popularity_by_race[rname] = {
+            "drivers": [{"name": n, "count": c,
+                         "pts": (drv_results.get(n, {}).get(rname) or {}).get("pts")} for n, c in d_rows],
+            "cons":    [{"name": n, "count": c,
+                         "pts": (con_results.get(n, {}).get(rname) or {}).get("pts")} for n, c in c_rows],
+            "maxD":    d_rows[0][1] if d_rows else 1,
+            "maxC":    c_rows[0][1] if c_rows else 1,
+        }
+
+    # ── Trades per race ───────────────────────────────────────────────────────
+    # Limitless races and the race immediately after are excluded from diffs —
+    # the game auto-resets to the pre-Limitless lineup so neither transition
+    # reflects a genuine transfer decision.
+    trades_by_race = {}
+    for i, rname in enumerate(all_lineup_races):
+        if i == 0:
+            continue
+        prev_rname = all_lineup_races[i - 1]
+        race_trades = []
+        for m in M:
+            cbr           = m.get("chip_by_race", {})
+            is_wildcard   = cbr.get(rname) == "Wildcard"
+            is_limitless  = cbr.get(rname) == "Limitless"
+            was_limitless = cbr.get(prev_rname) == "Limitless"
+
+            # Skip entirely for Limitless and post-Limitless — not real trades
+            if is_limitless or was_limitless:
+                continue
+
+            prev_picks = m["lineups"].get(prev_rname, [])
+            curr_picks = m["lineups"].get(rname, [])
+            if not prev_picks or not curr_picks:
+                continue
+
+            prev_d = {p["name"] for p in prev_picks if not p["is_constructor"]}
+            prev_c = {p["name"] for p in prev_picks if p["is_constructor"]}
+            curr_d = {p["name"] for p in curr_picks if not p["is_constructor"]}
+            curr_c = {p["name"] for p in curr_picks if p["is_constructor"]}
+
+            sold_d   = sorted(prev_d - curr_d)
+            bought_d = sorted(curr_d - prev_d)
+            sold_c   = sorted(prev_c - curr_c)
+            bought_c = sorted(curr_c - prev_c)
+
+            paired = []
+            for j in range(max(len(sold_d), len(bought_d))):
+                paired.append({"out": sold_d[j]   if j < len(sold_d)   else None,
+                                "in":  bought_d[j] if j < len(bought_d) else None,
+                                "isCon": False})
+            for j in range(max(len(sold_c), len(bought_c))):
+                paired.append({"out": sold_c[j]   if j < len(sold_c)   else None,
+                                "in":  bought_c[j] if j < len(bought_c) else None,
+                                "isCon": True})
+
+            total_trades = len(sold_d) + len(sold_c)
+
+            if paired or is_wildcard:
+                race_trades.append({
+                    "name":       m["name"],
+                    "color":      m["color"],
+                    "team":       m["team"],
+                    "wildcard":   is_wildcard,
+                    "trades":     paired,
+                    "tradeCount": total_trades,
                 })
 
-    # Build popularity bars HTML (from first race for simplicity, TODO: multi-race)
-    first_race = all_lineup_races[0]
-    d_sorted = sorted(driver_counts.items(), key=lambda x: -x[1])[:8]
-    c_sorted = sorted(con_counts.items(),    key=lambda x: -x[1])
-    max_d    = d_sorted[0][1] if d_sorted else 1
-    max_c    = c_sorted[0][1] if c_sorted else 1
+        race_trades.sort(key=lambda x: (-x["tradeCount"], x["name"]))
+        trades_by_race[rname] = race_trades
 
-    driver_pop_html = "".join(
-        f'<div class="pop-row"><div><div class="pop-name">{n}</div>'
-        f'<div class="pop-bar-bg"><div class="pop-bar-fill" style="width:{round(c/max_d*100)}%;background:#378ADD"></div></div></div>'
-        f'<div class="pop-count">{c}/{len(M)} teams</div></div>'
-        for n, c in d_sorted)
+    # ── DRS performance per manager ────────────────────────────────────────────
+    # Collect ALL drs picks per race (Extra DRS chip gives both a 2X and 3X pick)
+    drs_stats = []
+    for m in M:
+        races_with_drs = []
+        for rname in all_lineup_races:
+            picks = m["lineups"].get(rname, [])
+            drs_picks = [p for p in picks if p["drs"]]
+            if not drs_picks:
+                continue
+            for drs_pick in drs_picks:
+                others = [p for p in picks if not p["drs"] and p["pts"] is not None]
+                other_avg = round(sum(p["pts"] for p in others) / len(others), 1) if others else None
+                races_with_drs.append({
+                    "race":     rname,
+                    "pick":     drs_pick["name"],
+                    "pts":      drs_pick["pts"],
+                    "marker":   drs_pick.get("drs_marker", "2X"),
+                    "otherAvg": other_avg,
+                })
+        if not races_with_drs:
+            continue
+        scored = [r for r in races_with_drs if r["pts"] is not None]
+        hit_rate   = round(sum(1 for r in scored if r["pts"] > 0) / len(scored) * 100) if scored else 0
+        avg_pts    = round(sum(r["pts"] for r in scored) / len(scored), 1) if scored else 0
+        drs_stats.append({
+            "name":    m["name"],
+            "color":   m["color"],
+            "races":   races_with_drs,
+            "hitRate": hit_rate,
+            "avgPts":  avg_pts,
+            "count":   len(races_with_drs),
+        })
+    drs_stats.sort(key=lambda x: -x["avgPts"])
 
-    con_pop_html = "".join(
-        f'<div class="pop-row"><div><div class="pop-name">{n}</div>'
-        f'<div class="pop-bar-bg"><div class="pop-bar-fill" style="width:{round(c/max_c*100)}%;background:#D85A30"></div></div></div>'
-        f'<div class="pop-count">{c}/{len(M)} teams</div></div>'
-        for n, c in c_sorted)
+    # ── Trade regrets ─────────────────────────────────────────────────────────
+    # For each sold→bought pair, compute a combined Borda rank score across two
+    # dimensions: points scored and budget change that race.
+    # For each dimension, rank all assets of that type (driver or constructor) from
+    # best to worst that race. Convert to a 0–1 percentile (1 = best in field).
+    # Regret score = avg of sold_percentile − avg of bought_percentile across both dims.
+    # A positive score means the sold asset was better-ranked than the replacement
+    # on the combined pts+budget axis. Limitless races excluded.
 
+    def build_rank_lookup(results_dict, race_name):
+        """Return {asset_name: {"pts_pct": 0-1, "bud_pct": 0-1}} for a given race."""
+        entries = []
+        for name, races in results_dict.items():
+            r = races.get(race_name, {}) or {}
+            pts = r.get("pts")
+            bud = r.get("bud")
+            if pts is not None or bud is not None:
+                entries.append((name, pts, bud))
+        if not entries:
+            return {}
+        n = len(entries)
+        # Rank by pts (higher = better)
+        pts_sorted = sorted(entries, key=lambda x: (x[1] is not None, x[1] or 0))
+        pts_rank   = {e[0]: i / (n - 1) if n > 1 else 0.5 for i, e in enumerate(pts_sorted)}
+        # Rank by budget change (higher = better)
+        bud_sorted = sorted(entries, key=lambda x: (x[2] is not None, x[2] or 0))
+        bud_rank   = {e[0]: i / (n - 1) if n > 1 else 0.5 for i, e in enumerate(bud_sorted)}
+        return {e[0]: {"pts_pct": pts_rank[e[0]], "bud_pct": bud_rank[e[0]]} for e in entries}
+
+    regrets = []
+    wins    = []
+    for i, rname in enumerate(all_lineup_races[1:], 1):
+        prev_rname = all_lineup_races[i - 1]
+
+        # Build rank lookups for this race (drivers and constructors separately)
+        drv_ranks = build_rank_lookup(drv_results, rname)
+        con_ranks = build_rank_lookup(con_results, rname)
+
+        for m in M:
+            cbr = m.get("chip_by_race", {})
+            if cbr.get(rname) == "Limitless" or cbr.get(prev_rname) == "Limitless":
+                continue
+            prev_picks = m["lineups"].get(prev_rname, [])
+            curr_picks = m["lineups"].get(rname, [])
+            if not prev_picks or not curr_picks:
+                continue
+
+            prev_d = {p["name"] for p in prev_picks if not p["is_constructor"]}
+            prev_c = {p["name"] for p in prev_picks if p["is_constructor"]}
+            curr_d = {p["name"] for p in curr_picks if not p["is_constructor"]}
+            curr_c = {p["name"] for p in curr_picks if p["is_constructor"]}
+
+            sold_d   = sorted(prev_d - curr_d)
+            bought_d = sorted(curr_d - prev_d)
+            sold_c   = sorted(prev_c - curr_c)
+            bought_c = sorted(curr_c - prev_c)
+
+            for pairs, is_con, results, ranks in [
+                (list(zip(sold_d, bought_d)), False, drv_results, drv_ranks),
+                (list(zip(sold_c, bought_c)), True,  con_results, con_ranks),
+            ]:
+                for sold_name, bought_name in pairs:
+                    sold_r   = results.get(sold_name,   {}).get(rname) or {}
+                    bought_r = results.get(bought_name, {}).get(rname) or {}
+                    sold_pts   = sold_r.get("pts")
+                    sold_bud   = sold_r.get("bud")
+                    bought_pts = bought_r.get("pts")
+                    bought_bud = bought_r.get("bud")
+                    if sold_pts is None or bought_pts is None:
+                        continue
+
+                    sold_rank   = ranks.get(sold_name,   {})
+                    bought_rank = ranks.get(bought_name, {})
+                    if not sold_rank or not bought_rank:
+                        continue
+
+                    sold_score   = (sold_rank["pts_pct"]   + sold_rank["bud_pct"])   / 2
+                    bought_score = (bought_rank["pts_pct"]  + bought_rank["bud_pct"]) / 2
+                    diff_score   = sold_score - bought_score   # positive = regret, negative = good trade
+
+                    entry = {
+                        "manager":   m["name"],
+                        "color":     m["color"],
+                        "sold":      sold_name,
+                        "bought":    bought_name,
+                        "soldPts":   sold_pts,
+                        "boughtPts": bought_pts,
+                        "soldBud":   sold_bud,
+                        "boughtBud": bought_bud,
+                        "nextRace":  rname,
+                        "soldAfter": prev_rname,
+                        "isCon":     is_con,
+                    }
+
+                    if diff_score > 0 and sold_pts > bought_pts:
+                        # Regret: sold outperformed bought
+                        pts_margin = sold_pts - bought_pts
+                        bud_margin = round((sold_bud or 0) - (bought_bud or 0), 2)
+                        regrets.append({**entry,
+                            "ptsMargin": pts_margin,
+                            "budMargin": bud_margin,
+                            "score":     round(diff_score * 100, 1),
+                        })
+                    elif diff_score < 0 and bought_pts > sold_pts:
+                        # Win: bought outperformed sold
+                        pts_margin = bought_pts - sold_pts
+                        bud_margin = round((bought_bud or 0) - (sold_bud or 0), 2)
+                        wins.append({**entry,
+                            "ptsMargin": pts_margin,
+                            "budMargin": bud_margin,
+                            "score":     round(-diff_score * 100, 1),
+                        })
+
+    regrets.sort(key=lambda x: -x["score"])
+    top_regrets = regrets[:3]
+    wins.sort(key=lambda x: -x["score"])
+    top_wins = wins[:3]
+
+    # ── Loyalty ───────────────────────────────────────────────────────────────
+    if len(all_lineup_races) >= 2:
+        loyalty = {}
+        for m in M:
+            held = None
+            for rname in all_lineup_races:
+                names = {p["name"] for p in m["lineups"].get(rname, [])}
+                held = names if held is None else held & names
+            for asset in (held or set()):
+                loyalty.setdefault(asset, []).append(m["name"])
+        loyalty_highlights = sorted(
+            [(asset, mgrs) for asset, mgrs in loyalty.items() if len(mgrs) >= 2],
+            key=lambda x: -len(x[1]))[:4]
+    else:
+        loyalty_highlights = []
+
+    # ── Trade count summary ───────────────────────────────────────────────────
+    total_trades_per_manager = {}
+    for rname, race_trades in trades_by_race.items():
+        for entry in race_trades:
+            n = entry["name"]
+            total_trades_per_manager[n] = total_trades_per_manager.get(n, 0) + entry["tradeCount"]
+    most_active     = max(total_trades_per_manager, key=total_trades_per_manager.get) if total_trades_per_manager else "—"
+    most_active_cnt = total_trades_per_manager.get(most_active, 0)
+    least_active    = min(total_trades_per_manager, key=total_trades_per_manager.get) if total_trades_per_manager else "—"
+    least_active_cnt= total_trades_per_manager.get(least_active, 0)
+
+    # ── HTML helpers ──────────────────────────────────────────────────────────
+    _rd_names  = [r["name"] for r in data["races_done"]]
+    _last_done = _rd_names[-1] if _rd_names else (all_lineup_races[-1] if all_lineup_races else "")
+    trade_race_opts = "".join(
+        f'<option value="{rn}"{" selected" if rn == _last_done else ""}>{rn}</option>'
+        for rn in _rd_names[1:])
     race_options = "".join(
-        f'<option value="{rn}">{rn}</option>' for rn in all_lineup_races)
+        f'<option value="{rn}"{" selected" if rn == _last_done else ""}>{rn}</option>'
+        for rn in _rd_names)
+
+    def fmt_pts(v):
+        return f'+{v}' if v >= 0 else str(v)
+    def fmt_bud(v):
+        if v is None: return '—'
+        return f'+{v:.1f}m' if v >= 0 else f'{v:.1f}m'
+
+    loyalty_html = ""
+    if loyalty_highlights:
+        items = "".join(
+            f'<div class="loyalty-item"><div class="loyalty-asset">{asset}</div>'
+            f'<div class="loyalty-holders">{", ".join(mgrs)}</div></div>'
+            for asset, mgrs in loyalty_highlights)
+        loyalty_html = f"""
+<div class="section-label">Loyal holds — picked every race</div>
+<div class="card" style="padding:12px 16px">{items}</div>"""
+
+    regret_html = ""
+    if top_regrets:
+        cards = ""
+        for r in top_regrets:
+            sold_pts_txt   = fmt_pts(r["soldPts"])
+            bought_pts_txt = fmt_pts(r["boughtPts"])
+            sold_bud_txt   = fmt_bud(r["soldBud"])
+            bought_bud_txt = fmt_bud(r["boughtBud"])
+            pts_margin_txt = fmt_pts(r["ptsMargin"])
+            bud_margin_txt = fmt_bud(r["budMargin"])
+            cards += (
+                f'<div class="regret-card">'
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+                f'<div class="team-dot" style="background:{r["color"]}"></div>'
+                f'<div class="team-name">{r["manager"]}</div>'
+                f'<div style="margin-left:auto;font-size:11px;color:#888">{r["nextRace"]}</div>'
+                f'</div>'
+                f'<div class="regret-swap">'
+                f'<div class="regret-asset regret-out">'
+                f'<div class="regret-asset-name">{r["sold"]}</div>'
+                f'<div class="regret-asset-pts" style="color:#4caf50">{sold_pts_txt} pts</div>'
+                f'<div class="regret-asset-bud" style="color:#4caf50">{sold_bud_txt}</div>'
+                f'</div>'
+                f'<div class="regret-arrow">\u2192</div>'
+                f'<div class="regret-asset regret-in">'
+                f'<div class="regret-asset-name">{r["bought"]}</div>'
+                f'<div class="regret-asset-pts" style="color:#f44336">{bought_pts_txt} pts</div>'
+                f'<div class="regret-asset-bud" style="color:#f44336">{bought_bud_txt}</div>'
+                f'</div>'
+                f'</div>'
+                f'<div class="regret-footer">'
+                f'<span class="regret-margin">{pts_margin_txt} pts &middot; {bud_margin_txt} value</span>'
+                f'<span class="regret-score">score {r["score"]}</span>'
+                f'</div>'
+                f'</div>'
+            )
+        regret_html = f"""
+<div class="section-label">Trade regrets — sold too soon</div>
+<div class="hint" style="margin-bottom:12px">Trades where the sold asset outranked its replacement on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
+<div class="regret-grid">{cards}</div>"""
+
+    wins_html = ""
+    if top_wins:
+        cards = ""
+        for r in top_wins:
+            sold_pts_txt   = fmt_pts(r["soldPts"])
+            bought_pts_txt = fmt_pts(r["boughtPts"])
+            sold_bud_txt   = fmt_bud(r["soldBud"])
+            bought_bud_txt = fmt_bud(r["boughtBud"])
+            pts_margin_txt = fmt_pts(r["ptsMargin"])
+            bud_margin_txt = fmt_bud(r["budMargin"])
+            cards += (
+                f'<div class="regret-card">'
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+                f'<div class="team-dot" style="background:{r["color"]}"></div>'
+                f'<div class="team-name">{r["manager"]}</div>'
+                f'<div style="margin-left:auto;font-size:11px;color:#888">{r["nextRace"]}</div>'
+                f'</div>'
+                f'<div class="regret-swap">'
+                f'<div class="regret-asset" style="flex:1;background:#111;border-radius:6px;padding:7px 9px;border:0.5px solid #f4433644;min-width:0">'
+                f'<div class="regret-asset-name">{r["sold"]}</div>'
+                f'<div class="regret-asset-pts" style="color:#f44336">{sold_pts_txt} pts</div>'
+                f'<div class="regret-asset-bud" style="color:#f44336">{sold_bud_txt}</div>'
+                f'</div>'
+                f'<div class="regret-arrow">\u2192</div>'
+                f'<div class="regret-asset" style="flex:1;background:#111;border-radius:6px;padding:7px 9px;border:0.5px solid #4caf5044;min-width:0">'
+                f'<div class="regret-asset-name">{r["bought"]}</div>'
+                f'<div class="regret-asset-pts" style="color:#4caf50">{bought_pts_txt} pts</div>'
+                f'<div class="regret-asset-bud" style="color:#4caf50">{bought_bud_txt}</div>'
+                f'</div>'
+                f'</div>'
+                f'<div class="regret-footer">'
+                f'<span style="font-size:11px;color:#4caf50;font-weight:500">+{r["ptsMargin"]} pts &middot; {bud_margin_txt} value</span>'
+                f'<span class="regret-score">score {r["score"]}</span>'
+                f'</div>'
+                f'</div>'
+            )
+        wins_html = f"""
+<div class="section-label">Best trades — great calls</div>
+<div class="hint" style="margin-bottom:12px">Trades where the bought asset outranked what was sold on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
+<div class="regret-grid">{cards}</div>"""
 
     return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Team Picks · Starting lineups &amp; driver popularity</div>
+<div class="subtitle">Team Picks · Lineups, trades &amp; transfer analysis</div>
 <div class="metric-grid">
-  <div class="mc"><div class="mc-val">{len(M)}</div><div class="mc-lbl">Teams</div></div>
   <div class="mc"><div class="mc-val">{top_driver.split('. ')[-1] if '. ' in top_driver else top_driver}</div><div class="mc-lbl">Most picked driver ({top_driver_cnt}×)</div></div>
   <div class="mc"><div class="mc-val">{top_con}</div><div class="mc-lbl">Most picked constructor ({top_con_cnt}×)</div></div>
-  <div class="mc"><div class="mc-val">{top_drs.split('. ')[-1] if '. ' in top_drs else top_drs}</div><div class="mc-lbl">Most picked DRS ({top_drs_cnt}×)</div></div>
+  <div class="mc"><div class="mc-val">{most_active.split(' ')[0] if most_active != '—' else '—'}</div><div class="mc-lbl">Most active trader ({most_active_cnt} moves)</div></div>
+  <div class="mc"><div class="mc-val">{least_active.split(' ')[0] if least_active != '—' else '—'}</div><div class="mc-lbl">Most loyal ({least_active_cnt} moves)</div></div>
 </div>
+
+<div class="section-label">Lineup viewer</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-  <label>Race</label>
-  <select id="raceSel" onchange="showRace(this.value)">{race_options}</select>
-  <label style="margin-left:12px">Manager</label>
-  <select id="teamSel" onchange="showTeam(raceSel.value, this.value)"></select>
+  <label style="font-size:13px">Race</label>
+  <select id="raceSel" onchange="ucPicksRace(this.value)">{race_options}</select>
+  <label style="font-size:13px;margin-left:12px">Manager</label>
+  <select id="teamSel" onchange="ucPicksTeam(raceSel.value, this.value)"></select>
 </div>
-<div id="team-display"></div>
+<div id="picks-team-display"></div>
+
+<div class="section-label">Driver &amp; constructor popularity</div>
+<div class="hint" style="margin-bottom:12px">How many managers picked each driver/constructor for the selected race, with their actual points. Updates with the race selector above.</div>
 <div class="pop-grid">
-  <div><div class="section-label" style="margin-top:0">Most picked drivers</div><div class="card"><div id="driver-pop">{driver_pop_html}</div></div></div>
-  <div><div class="section-label" style="margin-top:0">Most picked constructors</div><div class="card"><div id="con-pop">{con_pop_html}</div></div></div>
+  <div>
+    <div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Drivers</div>
+    <div class="card" style="padding:12px 16px"><div id="picks-driver-pop"></div></div>
+  </div>
+  <div>
+    <div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Constructors</div>
+    <div class="card" style="padding:12px 16px"><div id="picks-con-pop"></div></div>
+  </div>
 </div>
+
+<div class="section-label">Transfers</div>
+<div class="hint" style="margin-bottom:12px">Which managers made moves between races. Wildcard and Limitless weekends are flagged.</div>
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+  <label style="font-size:13px">Into race</label>
+  <select id="tradeRaceSel">{trade_race_opts}</select>
+</div>
+<div id="picks-trades-display"></div>
+
+<div class="section-label">DRS performance</div>
+<div class="hint" style="margin-bottom:12px">Each manager's DRS pick results race by race. Extra DRS chip races show both picks separately. Hit rate = % of DRS picks that scored positive.</div>
+<div id="picks-drs-display"></div>
+
+{regret_html}
+{wins_html}
+{loyalty_html}
 <script>
 (function(){{
 const teamsByRace={js(teams_by_race)};
+const popByRace={js(popularity_by_race)};
+const tradesByRace={js(trades_by_race)};
+const drsStats={js(drs_stats)};
+const nManagers={n_managers};
+const p1Manager={js(M[0]["name"] if M else "")};
 const raceSel=document.getElementById('raceSel');
 const teamSel=document.getElementById('teamSel');
+const tradeRaceSel=document.getElementById('tradeRaceSel');
+
+/* ── Lineup viewer ── */
 function showRace(rname){{
   const teams=teamsByRace[rname]||[];
-  const prev=teamSel.value;
+  const prev=teamSel.value||p1Manager;
   teamSel.innerHTML='';
-  teams.forEach(t=>{{const o=document.createElement('option');o.value=t.name;o.textContent=t.name+' \u2014 '+t.teamName;if(t.name===prev)o.selected=true;teamSel.appendChild(o);}});
+  teams.forEach(t=>{{
+    const o=document.createElement('option');
+    o.value=t.name;
+    o.textContent=t.name+' \u2014 '+t.teamName;
+    if(t.name===prev)o.selected=true;
+    teamSel.appendChild(o);
+  }});
   if(teams.length>0) showTeam(rname, teamSel.value);
-  else document.getElementById('team-display').innerHTML='<div style="padding:1rem;color:#555;font-size:13px">No lineup data for this race yet.</div>';
+  else document.getElementById('picks-team-display').innerHTML=
+    '<div style="padding:1rem;color:#555;font-size:13px">No lineup data for this race yet.</div>';
+  renderPop(rname);
 }}
-function showTeam(rname, name){{
+
+function showTeam(rname, manName){{
   const teams=teamsByRace[rname]||[];
-  const t=teams.find(x=>x.name===name);
-  if(!t){{document.getElementById('team-display').innerHTML='';return;}}
-  const picks=t.picks.map(d=>`<div class="pick" style="${{d.drs?`border-color:${{t.color}};background:${{t.color}}11`:''}}">
-    <div class="pick-label">${{d.drs?'DRS boost':'Driver/Constructor'}}</div>
-    <div class="pick-name">${{d.name}}${{d.drs?'<span class="drs-badge">DRS</span>':''}}</div>
-  </div>`).join('');
-  const chipHtml=t.chip?`<span class="chip-pill" style="background:${{t.chip.bg}};color:${{t.chip.tc}};margin-left:auto">${{t.chip.label}}</span>`:'';
-  document.getElementById('team-display').innerHTML=`<div class="team-card">
+  const t=teams.find(x=>x.name===manName);
+  if(!t){{document.getElementById('picks-team-display').innerHTML='';return;}}
+  const chipHtml=t.chip
+    ?`<span class="chip-pill" style="background:${{t.chip.bg}};color:${{t.chip.tc}};margin-left:auto">${{t.chip.label}}</span>`:'';
+  const drivers=t.picks.filter(p=>!p.isCon);
+  const cons=t.picks.filter(p=>p.isCon);
+  function pickCard(p){{
+    const ptsTxt=p.pts!=null?(p.pts>=0?`+${{p.pts}}`:`${{p.pts}}`):'–';
+    const ptsColor=p.pts==null?'#555':p.pts>0?'#4caf50':p.pts<0?'#f44336':'#888';
+    const drsStyle=p.drs?`border-color:${{t.color}};background:${{t.color}}18`:'';
+    const drsLabel=p.drsMarker?`<span style="font-size:10px;font-weight:600;color:${{t.color}};margin-left:4px">${{p.drsMarker}}</span>`:'';
+    return `<div class="pick" style="${{drsStyle}}">
+      <div class="pick-label">${{p.drs?'<span style="color:'+t.color+'">⚡ DRS</span>':p.isCon?'Constructor':'Driver'}}</div>
+      <div class="pick-name">${{p.name}}${{drsLabel}}</div>
+      <div class="pick-pts" style="color:${{ptsColor}}">${{ptsTxt}} pts</div>
+    </div>`;
+  }}
+  const totalPts=t.racePts;
+  const totalTxt=totalPts>=0?`+${{totalPts}}`:`${{totalPts}}`;
+  const totalColor=totalPts>0?'#4caf50':totalPts<0?'#f44336':'#888';
+  document.getElementById('picks-team-display').innerHTML=`
+  <div class="team-card" style="margin-bottom:1rem">
     <div class="team-header">
       <div class="team-dot" style="background:${{t.color}}"></div>
       <div><div class="team-name">${{t.name}}</div><div class="team-sub">${{t.teamName}}</div></div>
-      ${{chipHtml}}
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        ${{chipHtml}}
+        <div style="font-size:18px;font-weight:600;color:${{totalColor}}">${{totalTxt}} pts</div>
+      </div>
     </div>
-    <div class="picks-grid">${{picks}}</div>
+    <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Drivers</div>
+    <div class="picks-grid">${{drivers.map(pickCard).join('')}}</div>
+    <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Constructors</div>
+    <div class="picks-grid">${{cons.map(pickCard).join('')}}</div>
   </div>`;
 }}
+
+/* ── Trades ── */
+function renderTrades(rname){{
+  const entries=tradesByRace[rname]||[];
+  const el=document.getElementById('picks-trades-display');
+  if(!entries.length){{
+    el.innerHTML='<div style="color:#555;font-size:13px;padding:8px 0">No transfers for this race.</div>';
+    return;
+  }}
+  const cards=entries.map(e=>{{
+    const wcBadge=e.wildcard
+      ?`<span class="chip-pill" style="background:#4a1a12;color:#ff7a5a;margin-left:6px">Wildcard</span>`:'';
+    const rows=e.trades.map(t=>{{
+      const outHtml=t.out?`<span class="trade-out">\u2716 ${{t.out}}</span>`:`<span style="color:#333">\u2014</span>`;
+      const inHtml =t.in ?`<span class="trade-in">\u2714 ${{t.in}}</span>` :`<span style="color:#333">\u2014</span>`;
+      const type=t.isCon?`<span class="trade-type">CON</span>`:`<span class="trade-type">DRV</span>`;
+      return `<div class="trade-row">${{type}}${{outHtml}}<span class="trade-arrow">\u2192</span>${{inHtml}}</div>`;
+    }}).join('');
+    const noTrades=!e.trades.length
+      ?`<div style="font-size:12px;color:#555;margin-top:6px">No changes detected</div>`:'';
+    return `<div class="trade-card">
+      <div class="team-header" style="margin-bottom:${{e.trades.length?'10px':'4px'}}">
+        <div class="team-dot" style="background:${{e.color}}"></div>
+        <div style="flex:1"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px"><span class="team-name">${{e.name}}</span>${{wcBadge}}</div><div class="team-sub">${{e.tradeCount}} transfer${{e.tradeCount!==1?'s':''}}</div></div>
+      </div>
+      ${{rows}}${{noTrades}}
+    </div>`;
+  }}).join('');
+  el.innerHTML=`<div class="trade-grid">${{cards}}</div>`;
+}}
+tradeRaceSel.addEventListener('change', function(){{ renderTrades(this.value); }});
+
+/* ── DRS table ── */
+(function(){{
+  const el=document.getElementById('picks-drs-display');
+  if(!drsStats.length){{el.innerHTML='';return;}}
+  const rows=drsStats.map(d=>{{
+    const raceRows=d.races.map(r=>{{
+      const ptsTxt=r.pts!=null?(r.pts>0?`<span style="color:#4caf50">+${{r.pts}}</span>`:`<span style="color:#f44336">${{r.pts}}</span>`):'–';
+      const markerColor=r.marker==='3X'?'#88dd44':'#888';
+      return `<div class="drs-race-row">
+        <span class="drs-race-name">${{r.race}}</span>
+        <span class="drs-pick-name">${{r.pick}} <span style="font-size:10px;color:${{markerColor}};font-weight:600">${{r.marker}}</span></span>
+        <span class="drs-pts">${{ptsTxt}}</span>
+      </div>`;
+    }}).join('');
+    const hitColor=d.hitRate>=75?'#4caf50':d.hitRate>=50?'#ffaa44':'#f44336';
+    const avgTxt=d.avgPts>=0?`+${{d.avgPts}}`:`${{d.avgPts}}`;
+    const avgColor=d.avgPts>0?'#4caf50':d.avgPts<0?'#f44336':'#888';
+    return `<div class="drs-manager-card">
+      <div class="team-header" style="margin-bottom:8px">
+        <div class="team-dot" style="background:${{d.color}}"></div>
+        <div class="team-name">${{d.name}}</div>
+        <div style="margin-left:auto;display:flex;gap:16px;align-items:center">
+          <div style="text-align:right"><div style="font-size:16px;font-weight:600;color:${{hitColor}}">${{d.hitRate}}%</div><div style="font-size:10px;color:#666">hit rate</div></div>
+          <div style="text-align:right"><div style="font-size:16px;font-weight:600;color:${{avgColor}}">${{avgTxt}}</div><div style="font-size:10px;color:#666">avg pts</div></div>
+        </div>
+      </div>
+      <div class="drs-races">${{raceRows}}</div>
+    </div>`;
+  }}).join('');
+  el.innerHTML=rows;
+}})();
+
+/* ── Popularity bars ── */
+function renderPop(rname){{
+  const pop=popByRace[rname];
+  if(!pop){{
+    document.getElementById('picks-driver-pop').innerHTML='';
+    document.getElementById('picks-con-pop').innerHTML='';
+    return;
+  }}
+  function barRow(item, maxCnt, isDriver){{
+    const pct=Math.round(item.count/maxCnt*100);
+    const ptsStr=item.pts!=null?(item.pts>=0?`<span style="color:#4caf50">+${{item.pts}}</span>`:`<span style="color:#f44336">${{item.pts}}</span>`):'';
+    const barColor=isDriver?'#378ADD':'#D85A30';
+    return `<div class="pop-row">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
+          <div class="pop-name">${{item.name}}</div>
+          <div style="font-size:11px;color:#666;white-space:nowrap">${{ptsStr}}</div>
+        </div>
+        <div class="pop-bar-bg"><div class="pop-bar-fill" style="width:${{pct}}%;background:${{barColor}}"></div></div>
+      </div>
+      <div class="pop-count" style="white-space:nowrap">${{item.count}}/${{nManagers}}</div>
+    </div>`;
+  }}
+  document.getElementById('picks-driver-pop').innerHTML=pop.drivers.map(d=>barRow(d,pop.maxD,true)).join('');
+  document.getElementById('picks-con-pop').innerHTML=pop.cons.map(c=>barRow(c,pop.maxC,false)).join('');
+}}
+
+window.ucPicksRace=showRace;
+window.ucPicksTeam=showTeam;
 showRace(raceSel.value);
+renderTrades(tradeRaceSel.value);
 }})();
 </script>"""
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1397,9 +2223,18 @@ SHARED_CSS = """
   .chip-pill { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 20px; font-weight: 500; margin-left: 4px; }
   .bar-bg { height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 5px; }
   .bar-fill { height: 100%; border-radius: 2px; }
+  /* scrollable wrappers for wide tables */
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* mobile */
+  @media (max-width: 600px) {
+    .panel-body { padding: 1rem; }
+    .metric-grid { grid-template-columns: repeat(2,1fr); }
+    .hl-grid { grid-template-columns: 1fr !important; }
+    .mc-val { font-size: 16px; }
+  }
   /* leaderboard */
-  .podium-row { display: flex; gap: 6px; margin-bottom: 1.5rem; }
-  .podium-card { flex: 1; background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 8px; padding: 10px 12px; }
+  .podium-row { display: flex; gap: 6px; margin-bottom: 1.5rem; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .podium-card { flex-shrink: 0; min-width: 160px; background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 8px; padding: 10px 12px; }
   .podium-pos { font-size: 11px; color: #888; margin-bottom: 2px; }
   .podium-name { font-size: 13px; font-weight: 500; }
   .row { display: grid; grid-template-columns: 26px 1fr 52px 52px; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid #2a2a2a; }
@@ -1458,8 +2293,7 @@ SHARED_CSS = """
   .race-podium { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 10px; }
   .podium-slots { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
   .tbd { font-size: 12px; color: #555; font-style: italic; }
-  /* stats */
-  .srow { display: grid; grid-template-columns: 26px 1fr repeat(9,26px) 36px; align-items: center; gap: 5px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; }
+  /* stats — .srow grid-template-columns injected dynamically by panel_stats */
   .srow:last-child { border-bottom: none; }
   .sname { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fin { width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; }
@@ -1488,8 +2322,45 @@ SHARED_CSS = """
   .pick { border-radius: 8px; padding: 7px 10px; background: #111; border: 0.5px solid #2a2a2a; }
   .pick-label { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
   .pick-name { font-size: 12px; font-weight: 500; }
+  .pick-pts { font-size: 12px; font-weight: 500; margin-top: 3px; }
   .drs-badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 10px; background: #FFD700; color: #7a5800; font-weight: 500; margin-left: 4px; }
-  .pop-row { display: grid; grid-template-columns: 1fr 80px; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; }
+  /* trades */
+  .trade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 10px; }
+  .trade-card { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 12px 14px; }
+  .trade-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; flex-wrap: wrap; }
+  .trade-type { font-size: 9px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: .04em; width: 28px; flex-shrink: 0; }
+  .trade-out { color: #f44336; text-decoration: line-through; }
+  .trade-in { color: #4caf50; }
+  .trade-arrow { color: #444; flex-shrink: 0; }
+  /* DRS performance */
+  .drs-manager-card { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .drs-races { border-top: 0.5px solid #2a2a2a; margin-top: 8px; padding-top: 6px; }
+  .drs-race-row { display: grid; grid-template-columns: 90px 1fr 50px; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 0.5px solid #1e1e1e; font-size: 12px; }
+  .drs-race-row:last-child { border-bottom: none; }
+  .drs-race-name { color: #888; font-size: 11px; }
+  .drs-pick-name { font-weight: 500; }
+  .drs-pts { text-align: right; font-weight: 500; }
+  /* regrets */
+  .regret-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 10px; margin-bottom: 1rem; }
+  .regret-card { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 12px 14px; }
+  .regret-swap { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+  .regret-asset { flex: 1; background: #111; border-radius: 6px; padding: 7px 9px; min-width: 0; }
+  .regret-out { border: 0.5px solid #4caf5044; }
+  .regret-in  { border: 0.5px solid #f4433644; }
+  .regret-asset-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
+  .regret-asset-pts { font-size: 13px; font-weight: 600; }
+  .regret-asset-bud { font-size: 11px; margin-top: 2px; opacity: 0.85; }
+  .regret-arrow { display: flex; align-items: center; color: #444; font-size: 14px; flex-shrink: 0; }
+  .regret-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+  .regret-margin { font-size: 11px; color: #f44336; font-weight: 500; }
+  .regret-score { font-size: 10px; color: #555; }
+  /* loyalty */
+  .loyalty-item { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; font-size: 13px; }
+  .loyalty-item:last-child { border-bottom: none; }
+  .loyalty-asset { font-weight: 500; }
+  .loyalty-holders { font-size: 11px; color: #888; text-align: right; }
+  /* popularity */
+  .pop-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; }
   .pop-row:last-child { border-bottom: none; }
   .pop-bar-bg { height: 4px; background: #2a2a2a; border-radius: 2px; overflow: hidden; margin-top: 3px; }
   .pop-bar-fill { height: 100%; border-radius: 2px; }
@@ -1513,6 +2384,23 @@ def build_html(data):
     nd   = data["n_done"]
     nt   = data["n_total"]
     last = data["races_done"][-1]["name"] if data["races_done"] else "Pre-season"
+
+    # NZ timestamp for "last updated" — tries zoneinfo (Python 3.9+), falls back to UTC+12/13
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        now_nz = datetime.now(ZoneInfo("Pacific/Auckland"))
+    except Exception:
+        from datetime import datetime, timezone, timedelta
+        now_nz = datetime.now(timezone(timedelta(hours=12)))
+    # Use cross-platform formatting (no %-d / %-I which are Linux-only)
+    day  = str(now_nz.day)                          # no leading zero
+    mon  = now_nz.strftime("%b")
+    year = now_nz.strftime("%Y")
+    hr   = now_nz.strftime("%I").lstrip("0") or "12"  # 12-hr no leading zero
+    mn   = now_nz.strftime("%M")
+    ampm = now_nz.strftime("%p").lower()
+    updated_str = f"{day} {mon} {year}, {hr}:{mn} {ampm} NZT"
 
     tab_buttons = ""
     panel_divs  = ""
@@ -1542,7 +2430,7 @@ def build_html(data):
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">{SEASON} Season · {nd}/{nt} races · Last: {last}</span>
+      <span class="header-badge">{SEASON} Season · {nd}/{nt} races · Last: {last} · Updated {updated_str}</span>
     </div>
     <nav class="tab-nav">
 {tab_buttons}    </nav>
@@ -1551,17 +2439,18 @@ def build_html(data):
 <div id="tab-content">
 {panel_divs}</div>
 <script>
-function showTab(slug) {{
+function showTab(slug, fromRestore) {{
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + slug).classList.add('active');
   document.getElementById('tab-' + slug).classList.add('active');
   document.getElementById('tab-' + slug).scrollIntoView({{behavior:'smooth',block:'nearest',inline:'center'}});
+  window.scrollTo({{top:0, behavior: fromRestore ? 'instant' : 'smooth'}});
   try {{ sessionStorage.setItem('uc-tab', slug); }} catch(e) {{}}
 }}
 try {{
   const t = sessionStorage.getItem('uc-tab');
-  if (t && document.getElementById('panel-' + t)) showTab(t);
+  if (t && document.getElementById('panel-' + t)) showTab(t, true);
 }} catch(e) {{}}
 </script>
 </body>
