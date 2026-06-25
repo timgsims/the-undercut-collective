@@ -645,7 +645,7 @@ def panel_leaderboard(data):
     ]
     medal_labels = ["1st", "2nd", "3rd"]
     pod_cards = ""
-    for pod in [p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]:
+    for pod in reversed([p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]):
         names = [pod["first"], pod["second"], pod["third"]]
         if any(names):
             slots_html = ""
