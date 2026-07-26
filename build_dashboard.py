@@ -1459,42 +1459,60 @@ def panel_podiums(data):
         if m:
             chip = m["chip_by_race"].get(race_name)
             if chip and chip in CHIP_STYLES:
-                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="0")
+                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True)
         return ""
 
-    # A real table (rather than the old flex/grid slot cards) so each cell's
-    # name/pill/points stack cleanly without the alignment quirks a custom
-    # box layout kept running into — same reasoning as Latest Podiums on the
-    # Leaderboard page.
-    def pod_slot_cell(names_in_slot, race_name):
-        if not names_in_slot:
-            return '<span style="color:#555">TBC</span>'
-        items = []
-        for name in names_in_slot:
-            pts = next((m["scores"].get(race_name, "") for m in M if m["name"] == name), "")
-            pts_html = f'<div style="color:#888;font-size:11px">{pts} pts</div>' if pts != "" else ""
-            pill = get_chip_pill(name, race_name)
-            pill_html = f'<div style="margin-top:2px">{pill}</div>' if pill else ""
-            items.append(
-                f'<div><div style="color:{get_color(name)};font-weight:500">{name}</div>{pill_html}{pts_html}</div>'
-            )
-        return f'<div style="display:flex;flex-direction:column;gap:8px">{"".join(items)}</div>'
+    # A real table, one row per podium finisher (not one row per race with
+    # 1st/2nd/3rd columns) — Race and Pos use rowspan to merge across a
+    # race's rows / a tied position's rows, and name/pill/points sit inline
+    # on each finisher's own row.
+    medal_colors = {"1st": "#FFD700", "2nd": "#C0C0C0", "3rd": "#CD7F32"}
 
     pod_rows = ""
     for pod in POD:
         filled = pod["first"] or pod["second"] or pod["third"]
         row_style = 'opacity:0.5' if not filled else ''
-        pod_rows += f"""<tr style="{row_style}">
-  <td style="white-space:nowrap;color:#888;vertical-align:top">{pod['race']}{sprint_pill(small=True) if pod.get('is_sprint') else ''}</td>
-  <td style="vertical-align:top">{pod_slot_cell(pod['first'], pod['race'])}</td>
-  <td style="vertical-align:top">{pod_slot_cell(pod['second'], pod['race'])}</td>
-  <td style="vertical-align:top">{pod_slot_cell(pod['third'], pod['race'])}</td>
-</tr>"""
 
-    cards_html = f"""<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-<table class="regret-table" style="min-width:0">
+        # Flatten to one entry per finisher-row: (pos_label, name_or_None)
+        entries = []
+        for label, names in (("1st", pod["first"]), ("2nd", pod["second"]), ("3rd", pod["third"])):
+            entries.extend((label, name) for name in names) if names else entries.append((label, None))
+
+        race_label_html = pod["race"] + (sprint_pill(small=True) if pod.get("is_sprint") else "")
+        total_rows = len(entries)
+        race_cell_written = False
+        i = 0
+        while i < len(entries):
+            label = entries[i][0]
+            j = i
+            while j < len(entries) and entries[j][0] == label:
+                j += 1
+            group_size = j - i
+            for k in range(i, j):
+                _, name = entries[k]
+                cells = ""
+                if not race_cell_written:
+                    cells += (f'<td rowspan="{total_rows}" style="white-space:nowrap;color:#888;'
+                              f'vertical-align:top;border-right:0.5px solid #2a2a2a">{race_label_html}</td>')
+                    race_cell_written = True
+                if k == i:
+                    cells += (f'<td rowspan="{group_size}" style="vertical-align:top;font-weight:600;'
+                              f'color:{medal_colors[label]}">{label}</td>')
+                if name is None:
+                    cells += '<td colspan="2" style="color:#555">TBC</td>'
+                else:
+                    pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
+                    pts_txt = f'{pts} pts' if pts != "" else "—"
+                    pill = get_chip_pill(name, pod["race"])
+                    cells += f'<td style="color:{get_color(name)};font-weight:500;white-space:nowrap">{name}{pill}</td>'
+                    cells += f'<td style="text-align:right;color:#888;font-size:12px;white-space:nowrap">{pts_txt}</td>'
+                pod_rows += f'<tr style="{row_style}">{cells}</tr>'
+            i = j
+
+    cards_html = f"""<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+<table class="regret-table" style="min-width:0;margin-bottom:0">
   <thead><tr>
-    <th>Race</th><th style="color:#FFD700">1st</th><th style="color:#C0C0C0">2nd</th><th style="color:#CD7F32">3rd</th>
+    <th>Race</th><th>Pos</th><th>Manager</th><th style="text-align:right">Points</th>
   </tr></thead>
   <tbody>{pod_rows}</tbody>
 </table>
