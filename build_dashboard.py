@@ -292,6 +292,7 @@ def read_database(db_path, season=None):
             round_points = points_by_round_player.get(round_no, {})
             round_value = value_by_round_player.get(round_no, {})
             round_value_raw = raw_value_by_round_player.get(round_no, {})
+            round_bud = bud_by_round_player.get(round_no, {})
             round_session_points = session_points_by_round_player.get(round_no, {})
             picks = []
             race_session_totals = {}
@@ -315,6 +316,7 @@ def read_database(db_path, season=None):
                     "pts":            pts,
                     "is_constructor": ptype == "constructor",
                     "value":          pick_value,
+                    "value_change":   round_bud.get(pid),
                 })
                 for stype, spts in round_session_points.get(pid, {}).items():
                     if spts is None or not stype:
@@ -1876,9 +1878,11 @@ def panel_picks(data):
 
     # ── Per-race JS data ──────────────────────────────────────────────────────
     # teams_by_race: per race, list of manager picks (with pts per pick, DRS flag)
+    finalized_names = {r["name"] for r in data["races_finalized"]}
     teams_by_race = {}
     for rname in all_lineup_races:
         teams_by_race[rname] = []
+        is_final = rname in finalized_names
         for m in M:
             picks = m["lineups"].get(rname, [])
             if not picks:
@@ -1892,11 +1896,13 @@ def panel_picks(data):
                 "teamName":  m["team"],
                 "color":     m["color"],
                 "racePts":   race_pts,
+                "isFinal":   is_final,
                 "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
                 "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
                                "pts": p["pts"], "isCon": p["is_constructor"],
                                "seasonPts": season_pts.get(p["name"]) or 0,
                                "value": p.get("value"),
+                               "valueChange": p.get("value_change") if is_final else None,
                                "seasonValue": season_val.get(p["name"]) or 0} for p in picks],
             })
         # Sort by race points descending so top scorer shows first
@@ -2414,10 +2420,16 @@ function showTeam(rname, manName){{
   }}
   const drivers=toColumnMajor(bySeasonValue(t.picks.filter(p=>!p.isCon)), 2);
   const cons=toColumnMajor(bySeasonValue(t.picks.filter(p=>p.isCon)), 2);
+  function fmtChange(v){{
+    if(v==null)return '';
+    const color=v>0?'#4caf50':v<0?'#f44336':'#888';
+    return ` <span style="color:${{color}}">${{v>=0?'+':''}}${{v.toFixed(1)}}</span>`;
+  }}
   function pickCard(p){{
     const ptsTxt=p.pts!=null?(p.pts>=0?`+${{p.pts}}`:`${{p.pts}}`):'–';
     const ptsColor=p.pts==null?'#555':p.pts>0?'#4caf50':p.pts<0?'#f44336':'#888';
     const valueTxt=p.value!=null?`${{p.value.toFixed(1)}}m`:'—';
+    const changeTxt=t.isFinal?fmtChange(p.valueChange):'';
     const drsStyle=p.drs?`border-color:${{t.color}};background:${{t.color}}18`:'';
     const drsLabel=p.drsMarker?`<span style="font-size:10px;font-weight:600;color:${{t.color}};margin-left:4px">${{p.drsMarker}}</span>`:'';
     return `<div class="pick" style="${{drsStyle}}">
@@ -2425,7 +2437,7 @@ function showTeam(rname, manName){{
       <div class="pick-name">${{p.name}}${{drsLabel}}</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">
         <span class="pick-pts" style="color:${{ptsColor}};margin-top:0">${{ptsTxt}} pts</span>
-        <span style="font-size:11px;color:#888">${{valueTxt}}</span>
+        <span style="font-size:11px;color:#888">${{valueTxt}}${{changeTxt}}</span>
       </div>
     </div>`;
   }}
@@ -2434,13 +2446,15 @@ function showTeam(rname, manName){{
   const totalColor=totalPts>0?'#4caf50':totalPts<0?'#f44336':'#888';
   const totalValue=t.picks.reduce((sum,p)=>sum+(p.value||0),0);
   const totalValueTxt=totalValue>0?`${{totalValue.toFixed(1)}}m`:'—';
+  const totalValueChange=t.isFinal?t.picks.reduce((sum,p)=>sum+(p.valueChange||0),0):null;
+  const totalChangeTxt=t.isFinal?fmtChange(totalValueChange):'';
   document.getElementById('picks-team-display').innerHTML=`
   <div class="team-card" style="margin-bottom:1rem">
     <div class="team-header">
       <div class="team-dot" style="background:${{t.color}}"></div>
       <div><div class="team-name">${{t.name}}</div><div class="team-sub">${{t.teamName}}</div></div>
       <div style="margin-left:auto;text-align:right">
-        <div style="font-size:13px;font-weight:500">${{totalValueTxt}}</div>
+        <div style="font-size:13px;font-weight:500">${{totalValueTxt}}${{totalChangeTxt}}</div>
         <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.04em">Team value</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-left:12px">
