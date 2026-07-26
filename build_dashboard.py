@@ -1468,11 +1468,13 @@ def panel_podiums(data):
             if chip and chip in CHIP_STYLES:
                 # ml="0" — this pill sits on its own line under the name (not
                 # inline next to it), so it needs to start flush left rather
-                # than carry the 4px "next to text" margin used elsewhere. A
-                # small negative value compensates for the pill's own left
-                # padding + rounded corners, which otherwise still reads as
-                # a slight indent versus the flush-left name/pts text.
-                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="-2px")
+                # than carry the 4px "next to text" margin used elsewhere.
+                # (A negative value was tried to compensate for the pill's
+                # own rounded-corner padding, but the parent's overflow:hidden
+                # guard — needed to stop a long label blowing out the grid —
+                # clipped the pill's left edge into a flat corner. Not worth
+                # that tradeoff for a few px of optical padding.)
+                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="0")
         return ""
 
     cards_html = ""
@@ -1488,7 +1490,7 @@ def panel_podiums(data):
                     pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
                     pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
                     pill = get_chip_pill(name, pod["race"])
-                    pill_html = f'<div style="margin-top:1px">{pill}</div>' if pill else ""
+                    pill_html = f'<div style="margin-top:0">{pill}</div>' if pill else ""
                     names_html += (f'<div><div class="slot-name" style="color:{get_color(name)}">'
                                    f'{name}</div>{pill_html}{pts_html}</div>')
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
@@ -1623,10 +1625,14 @@ def panel_stats(data):
          hl_row("—", ["Worst luck", "No inactive-driver penalties yet"]))
     )
 
-    # Name column trimmed from the original ~100px (minmax(70px,1fr) in a
-    # 420px row) — manager names here are all short, so a fixed width is
-    # plenty and gets the whole table closer to fitting on a phone screen.
-    fin_grid = f"26px 62px repeat({N_FIN},26px) 36px"
+    # Name column's minimum trimmed from the original ~100px, but kept as
+    # minmax(...,1fr) rather than a flat width — on mobile there's no spare
+    # space to grow into so it renders at the tight minimum, but on a wide
+    # PC viewport it still stretches to fill the row, which is what pushes
+    # P1-P8/Pts flush to the right edge of the card (matching the original
+    # look there) instead of the whole table clustering flush-left with a
+    # dead gap on the right.
+    fin_grid = f"26px minmax(62px,1fr) repeat({N_FIN},26px) 36px"
     fin_min_w = 26 + 62 + 26 * N_FIN + 36 + 5 * (N_FIN + 3)
 
     return f"""<div class="subtitle">Stats · Season overview &amp; highlights</div>
@@ -1638,7 +1644,7 @@ def panel_stats(data):
   <div class="mc"><div class="mc-val">{swing_m['name']}</div><div class="mc-lbl">Biggest swing ({swing_val} places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
-<div class="card" style="padding:4px 8px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+<div class="card" style="padding:4px 4px;overflow-x:auto;-webkit-overflow-scrolling:touch">
   <div style="display:grid;grid-template-columns:{fin_grid};gap:5px;padding:6px 0 2px;min-width:{fin_min_w}px">
     <div></div><div></div>{pos_headers}<div style="font-size:9px;color:#555;text-align:right">Pts</div>
   </div>
@@ -2604,6 +2610,15 @@ renderImpactPerRace(impactManagerSel.value, impactPerRaceMetric);
 SHARED_CSS = """
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e8e8e6; min-height: 100vh; }
+  /* Dark-themed scrollbars — desktop browsers otherwise show a light system
+     scrollbar on the horizontally-scrolling tables/charts, which looks out
+     of place against the dark theme. Mobile browsers mostly use overlay
+     scrollbars already, so this is a desktop-only visual fix. */
+  * { scrollbar-width: thin; scrollbar-color: #3a3a3a #1a1a1a; }
+  ::-webkit-scrollbar { height: 9px; width: 9px; }
+  ::-webkit-scrollbar-track { background: #1a1a1a; }
+  ::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
   .site-header { position: sticky; top: 0; z-index: 200; background: #0f0f0f; border-bottom: 1px solid #1e1e1e; }
   .header-inner { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; }
   .header-top { display: flex; align-items: center; gap: 10px; padding: 10px 0 8px; border-bottom: 1px solid #1a1a1a; }
