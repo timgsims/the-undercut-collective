@@ -2,39 +2,37 @@
 """
 The Undercut Collective — F1 Fantasy Dashboard Builder
 =======================================================
-Reads your Excel workbook and generates a combined HTML dashboard,
-then commits and pushes it to GitHub Pages.
+Reads f1_data.db (populated by fetch_f1_data.py from the F1 Fantasy API)
+and generates a combined HTML dashboard, then commits and pushes it to
+GitHub Pages.
 
 Run this after every race:  python build_dashboard.py
 Or just double-click it in File Explorer.
-
-Requirements (install once):
-    pip install openpyxl
 """
 
 import sys
 import os
 import re
+import sqlite3
 import subprocess
 from pathlib import Path
-
-# ── Try importing openpyxl, give clear instructions if missing ────────────────
-try:
-    import openpyxl
-except ImportError:
-    print("ERROR: openpyxl is not installed.")
-    print("Fix:   Open a terminal and run:  pip install openpyxl")
-    input("\nPress Enter to exit...")
-    sys.exit(1)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION — edit these if paths change
 # ─────────────────────────────────────────────────────────────────────────────
 
-WORKBOOK_PATH = r"C:\Users\tim\OneDrive\Documents\Excel\the-undercut-collective\The Undercut Collective F1 Fantasy League.xlsx"
-
 # Folder where this script lives (= your GitHub repo root)
 REPO_DIR = Path(__file__).parent
+
+DB_PATH = REPO_DIR / "f1_data.db"
+
+# Only pause for a keypress when someone's actually watching a terminal —
+# a scheduled/unattended run must never block waiting for input.
+INTERACTIVE = sys.stdin.isatty()
+
+def pause(msg="\nPress Enter to exit..."):
+    if INTERACTIVE:
+        input(msg)
 
 # The output HTML file (must be index.html for GitHub Pages)
 OUTPUT_FILE = REPO_DIR / "index.html"
@@ -78,383 +76,320 @@ DASH_PATTERNS = [[], [6,2], [2,2], [8,3], [4,2], [6,2,2,2], [3,3], [8,2,2,2], [1
 # STEP 1 — READ EXCEL
 # ─────────────────────────────────────────────────────────────────────────────
 
-def read_workbook(path):
-    print(f"Reading workbook: {path}")
-    if not Path(path).exists():
-        print(f"\nERROR: Workbook not found at:\n  {path}")
-        print("Check the WORKBOOK_PATH setting at the top of this script.")
-        input("\nPress Enter to exit...")
+def read_database(db_path, season=None):
+    """season=None means "the most recent season present in the database" —
+    the live dashboard always wants that. Passing an explicit year is how the
+    future season-archive feature will pull up a past year's data instead."""
+    print(f"Reading database: {db_path}")
+    if not Path(db_path).exists():
+        print(f"\nERROR: Database not found at:\n  {db_path}")
+        print("Run fetch_f1_data.py first to create and populate it.")
+        pause()
         sys.exit(1)
 
-    wb = openpyxl.load_workbook(path, data_only=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     data = {}
 
-    # ── Races sheet (sheet index 0) ──────────────────────────────────────────
-    ws = wb.worksheets[0]   # Races
+    if season is None:
+        row = conn.execute("SELECT MAX(season) AS s FROM races").fetchone()
+        season = row["s"] if row and row["s"] is not None else None
+    data["season"] = season
 
-    # Row 2 = headers. Even columns H onwards = race scores (col 8, 10, 12...)
-    # Row 1 = round numbers in even cols.  Row 2 = race names in even cols.
-    # Cols: A=Team, B=Name, C=Total, D=Rank, E=Interval, F=Gap, G=Avg, H onwards = scores
+    races = [{"round": r["round"], "name": r["name"], "col": None}
+              for r in conn.execute(
+                  "SELECT round, name FROM races WHERE season=? ORDER BY round", (season,)
+              )]
+    race_name_by_round = {r["round"]: r["name"] for r in races}
 
-    # Build race list from row 2 (col 8 = H onwards, every 2)
-    races = []       # list of {"round": int, "name": str, "col": int}
-    for col in range(8, ws.max_column + 1, 2):
-        name = ws.cell(row=2, column=col).value
-        rnd  = ws.cell(row=1, column=col).value
-        if name and rnd:
-            races.append({"round": int(rnd), "name": str(name).strip(), "col": col})
+    manager_rows = list(conn.execute("SELECT id, name, team_name FROM managers"))
 
-    # Managers (rows 3–11)
+    # NZ country leaderboard — a single current-snapshot stat (not per-round
+    # history like global_ranks), sourced from F1's public top-500-NZ feed.
+    # Managers ranked outside that top 500 simply have no row here — there's
+    # no legitimate way to get their NZ rank without their own session cookie.
+    nz_by_manager = {
+        row["manager_id"]: {"rank": row["nz_rank"], "points": row["nz_points"]}
+        for row in conn.execute(
+            "SELECT manager_id, nz_rank, nz_points FROM nz_leaderboard WHERE season=?", (season,)
+        )
+    }
+
     managers_raw = []
-    for row in range(3, 12):
-        name_cell = ws.cell(row=row, column=2).value
-        if not name_cell:
-            break
-        name  = str(name_cell).strip()
-        team  = str(ws.cell(row=row, column=1).value or "").strip()
-        total = ws.cell(row=row, column=3).value or 0
-        rank  = ws.cell(row=row, column=4).value or 0
-        avg   = ws.cell(row=row, column=7).value or 0
+    for mrow in manager_rows:
+        mid = mrow["id"]
+        scores           = {}
+        global_ranks     = {}   # {race_name: {"gdrank":, "ovrank":}}
+        transfers        = {}   # {race_name: count}
+        inactive_penalty = {}   # {race_name: points}
+        for rr in conn.execute(
+            "SELECT round, points, gameday_rank, overall_rank, transfers_made, "
+            "inactive_driver_penalty FROM race_results WHERE season=? AND manager_id=? ORDER BY round",
+            (season, mid),
+        ):
+            rname = race_name_by_round.get(rr["round"])
+            if not rname:
+                continue
+            scores[rname] = int(rr["points"])
+            if rr["gameday_rank"] is not None or rr["overall_rank"] is not None:
+                global_ranks[rname] = {"gdrank": rr["gameday_rank"], "ovrank": rr["overall_rank"]}
+            if rr["transfers_made"] is not None:
+                transfers[rname] = rr["transfers_made"]
+            if rr["inactive_driver_penalty"] is not None:
+                inactive_penalty[rname] = rr["inactive_driver_penalty"]
 
-        scores = {}
-        for race in races:
-            v = ws.cell(row=row, column=race["col"]).value
-            if v is not None and v != "":
-                try:
-                    scores[race["name"]] = int(float(str(v)))
-                except (ValueError, TypeError):
-                    pass   # position string in odd col — skip
+        total = sum(scores.values())
+        avg   = round(total / len(scores), 1) if scores else 0
 
         managers_raw.append({
-            "name":   name,
-            "team":   team,
-            "total":  int(float(str(total))) if total else 0,
-            "rank":   int(rank) if rank else 0,
-            "avg":    float(str(avg)) if avg else 0,
-            "scores": scores,   # {race_name: pts}
-            "color":  MANAGER_COLOURS.get(name, "#888888"),
+            "name":   mrow["name"],
+            "team":   mrow["team_name"],
+            "total":  total,
+            "rank":   0,   # assigned below, once every manager's total is known
+            "avg":    avg,
+            "scores": scores,
+            "global_ranks":     global_ranks,
+            "transfers":        transfers,
+            "inactive_penalty": inactive_penalty,
+            "nz_rank":          nz_by_manager.get(mid, {}).get("rank"),
+            "color":  MANAGER_COLOURS.get(mrow["name"], "#888888"),
         })
 
-    # Sort by rank
-    managers_raw.sort(key=lambda m: m["rank"])
-    data["managers"]    = managers_raw
-    data["races"]       = races
-    data["races_done"]  = [r for r in races if any(
+    managers_raw.sort(key=lambda m: -m["total"])
+    for i, m in enumerate(managers_raw):
+        m["rank"] = i + 1
+
+    data["managers"]   = managers_raw
+    data["races"]      = races
+    # races_done = has ANY points data, including a race weekend that's only
+    # partway through — season totals/standings are meant to track live as a
+    # weekend unfolds (Tim's call), so this stays inclusive of partial data.
+    data["races_done"] = [r for r in races if any(
         m["scores"].get(r["name"]) is not None for m in managers_raw)]
 
-    # Podiums are derived later in compute() from per-race score rankings —
-    # same source Race Breakdown uses — instead of read from a worksheet, so the
-    # two pages can never drift apart.
+    # races_finalized = the subset where F1 Fantasy's own mds flag says the
+    # whole gameday is scored. Anything that declares a *result* for a race
+    # (podiums, race winner, finish-position stats) must only ever look at
+    # this list, never races_done — a tied or partial race isn't decided yet.
+    final_by_round = {
+        row["round"]: bool(row["is_final"])
+        for row in conn.execute(
+            "SELECT round, MAX(is_final) AS is_final FROM race_results WHERE season=? GROUP BY round",
+            (season,),
+        )
+    }
+    data["races_finalized"] = [r for r in data["races_done"] if final_by_round.get(r["round"])]
 
-    # ── Stats sheet (index 2) — finish distribution + chip usage ────────────
-    ws_stats = wb.worksheets[2]
-    finish_dist = {}     # {name: [p1, p2, ..., pN]} — N detected dynamically
-    chips_used  = {}     # {name: {chip_name: bool}}
+    # Session-by-session status (Qualifying/Sprint Qualifying/Sprint/Race) for
+    # whichever race is currently live — powers the "how far through this
+    # weekend are we" detail on the live-race box.
+    sessions_by_round = {}
+    for row in conn.execute(
+        "SELECT round, session_number, session_type, is_done FROM session_status "
+        "WHERE season=? ORDER BY round, session_number", (season,),
+    ):
+        sessions_by_round.setdefault(row["round"], []).append(
+            {"type": row["session_type"], "done": bool(row["is_done"])}
+        )
+    data["sessions_by_round"] = sessions_by_round
 
-    # Rows 2–10: finish distribution.
-    # The number of finish-position columns equals the number of managers in the league —
-    # one column per possible finishing position (P1 through P_N_managers).
-    # This is more reliable than sniffing data types, which picks up the Podiums
-    # and Total Pts columns that also contain integers.
     n_finish_cols = len(managers_raw)
     data["n_finish_cols"] = n_finish_cols
 
-    for row in range(2, 12):
-        name = ws_stats.cell(row=row, column=2).value
-        if not name:
-            break
-        name = str(name).strip()
-        finishes = []
-        for col in range(3, 3 + n_finish_cols):
-            v = ws_stats.cell(row=row, column=col).value
-            finishes.append(int(float(str(v))) if v else 0)
-        finish_dist[name] = finishes
-
-    # Chip usage: header row 12, data rows 13+
-    # Col B=Name, C=Limitless, D=Wildcard, E=Final Fix, F=Auto Pilot, G=No Negative, H=Extra DRS
-    chip_header_row = None
-    for row in range(11, 25):
-        if ws_stats.cell(row=row, column=1).value == "CHIPS USED":
-            chip_header_row = row
-            break
-
-    if chip_header_row:
-        chip_cols = {}   # {col: chip_name}
-        for col in range(3, 9):
-            hdr = ws_stats.cell(row=chip_header_row, column=col).value
-            if hdr:
-                chip_cols[col] = str(hdr).strip()
-
-        for row in range(chip_header_row + 1, chip_header_row + 12):
-            name = ws_stats.cell(row=row, column=2).value
-            if not name:
-                continue
-            name = str(name).strip()
-            used = {}
-            for col, chip in chip_cols.items():
-                v = ws_stats.cell(row=row, column=col).value
-                used[chip] = bool(v and str(v).strip().upper() == "X")
-            chips_used[name] = used
-
-    data["finish_dist"] = finish_dist
-    data["chips_used"]  = chips_used
-
-    # ── Stats sheet — chip usage BY RACE (col P onwards, rows 1–9) ───────────
-    # Row 1: col P = "CHIPS USED BY RACE", col Q+ = race names
-    # Rows 2–9: col P = manager name, col Q+ = chip name used that race (or empty)
-    chip_race_usage = {}   # {manager_name: {race_name: chip_name}}
-    chip_by_race_header_col = None
-    for col in range(1, ws_stats.max_column + 1):   # scan whole row 1 for the label
-        v = ws_stats.cell(row=1, column=col).value
-        if v and "CHIPS USED BY RACE" in str(v):
-            chip_by_race_header_col = col
-            break
-
-    if chip_by_race_header_col:
-        # Read race names from row 1 starting one column after the label
-        cbr_race_cols = {}   # {col: race_name}
-        for col in range(chip_by_race_header_col + 1, ws_stats.max_column + 1):
-            rname = ws_stats.cell(row=1, column=col).value
-            if rname and str(rname).strip():
-                cbr_race_cols[col] = str(rname).strip()
-            else:
-                break
-        # Read manager rows (rows 2–9, col P = manager name)
-        for row in range(2, 11):
-            name = ws_stats.cell(row=row, column=chip_by_race_header_col).value
-            if not name:
-                continue
-            name = str(name).strip()
-            used_by_race = {}
-            for col, rname in cbr_race_cols.items():
-                v = ws_stats.cell(row=row, column=col).value
-                if v and str(v).strip():
-                    used_by_race[rname] = str(v).strip()
-            chip_race_usage[name] = used_by_race
-
+    # ── Chip usage — summary flags + which race each chip was used in ────────
+    manager_name_by_id = {mrow["id"]: mrow["name"] for mrow in manager_rows}
+    chips_used      = {m["name"]: {} for m in managers_raw}
+    chip_race_usage = {m["name"]: {} for m in managers_raw}
+    for crow in conn.execute(
+        "SELECT manager_id, chip_name, round_taken FROM chips_used WHERE season=?", (season,)
+    ):
+        mname = manager_name_by_id.get(crow["manager_id"])
+        if not mname:
+            continue
+        chips_used[mname][crow["chip_name"]] = True
+        rname = race_name_by_round.get(crow["round_taken"])
+        if rname:
+            chip_race_usage[mname][rname] = crow["chip_name"]
+        # Note: Wildcard's "round taken" consistently comes back as 0 from the
+        # F1 Fantasy API (a quirk on their end, not ours) — round 0 matches no
+        # race, so Wildcard will show in the season summary but won't get a
+        # per-race pill until/unless F1 fixes that field.
+    data["chips_used"]      = chips_used
     data["chip_race_usage"] = chip_race_usage
 
-    # ── Driver Changes sheet (index 3) — lineups + actual results ────────────
-    ws_dc = wb.worksheets[3]
+    # ── Lineups — team_picks + players, DRS/captain flag from race_results ───
+    player_names = {p["id"]: (p["name"], p["type"]) for p in
+                     conn.execute("SELECT id, name, type FROM players")}
+    captain_by_round_manager = {
+        (rr["round"], rr["manager_id"]): rr["captain_player_id"]
+        for rr in conn.execute(
+            "SELECT round, manager_id, captain_player_id FROM race_results WHERE season=?", (season,)
+        )
+    }
+    # {round: {player_id: gameday_points}} — the driver/constructor's own base
+    # score that race, same for every manager who picked them (DRS doubling
+    # is applied per-manager below, not baked into this shared source value).
+    points_by_round_player = {}
+    bud_by_round_player = {}
+    latest_overall_points = {}   # player_id -> overall_points as of the highest round seen
+    latest_overall_round  = {}   # player_id -> that round, to track "latest"
+    for rr in conn.execute(
+        "SELECT round, player_id, gameday_points, value_change, overall_points "
+        "FROM player_results WHERE season=?", (season,)
+    ):
+        points_by_round_player.setdefault(rr["round"], {})[rr["player_id"]] = rr["gameday_points"]
+        # Same one-race lag confirmed for the team-level budget fix: round N's
+        # feed reflects the price move CAUSED BY round N-1, not round N itself
+        # (verified: round 11's sum of value_change == Tim's known round-10
+        # team budget change, exactly). File it under round N-1 so it lines
+        # up with the race that actually caused it.
+        bud_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value_change"]
 
-    # Layout (confirmed from XML):
-    #   Row 1: round numbers in race-name cols (D=1, I=2, N=3, S=4 ...)
-    #   Row 2: A=Team, B=Name, C=Starting Value, then per race (5-col blocks):
-    #     [race_col+0] = race name   (e.g. D=Australia, I=China, N=Japan ...)
-    #     [race_col+1] = DRS marker  ("2X" if DRS pick, else empty)
-    #     [race_col+2] = Budget +-
-    #     [race_col+3] = Value
-    #     [race_col+4] = Result      (points manager earned for this pick this race)
-    #   Race blocks start at col 4 (D=index 4 in 1-based) and repeat every 5 cols.
-    #   Manager section: rows 3–58 (7 rows per manager, 5 drivers + 2 constructors)
-    #   Actual driver results: rows 61–82 (same column layout, col E=2X doubled score)
-    #   Constructor results:   rows 83–93 (same column layout, no DRS column)
+        if rr["round"] > latest_overall_round.get(rr["player_id"], -1):
+            latest_overall_round[rr["player_id"]] = rr["round"]
+            latest_overall_points[rr["player_id"]] = rr["overall_points"]
 
-    skip_hdrs = {"2X", "Budget +-", "Value", "#", "DRS", "", None}
+    # Season-to-date points per driver/constructor NAME, as of the most recent
+    # round we have — used to sort Team Picks' transfer/trade lists by current
+    # standing rather than alphabetically.
+    data["player_season_points"] = {
+        player_names.get(pid, (None, None))[0]: pts
+        for pid, pts in latest_overall_points.items()
+        if player_names.get(pid, (None, None))[0]
+    }
 
-    # Detect race columns from row 2 (1-based col 4 = D onward, every 5)
-    race_cols_dc = []   # [(race_name, col_1based), ...]
-    for col in range(4, ws_dc.max_column + 1, 5):
-        hdr = ws_dc.cell(row=2, column=col).value
-        if hdr and str(hdr).strip() not in skip_hdrs:
-            race_cols_dc.append((str(hdr).strip(), col))
+    # {round: {player_id: {session_type: points}}} — used to break a race's
+    # total down into Qualifying/Sprint/Race for the live-progress box.
+    session_points_by_round_player = {}
+    for rr in conn.execute(
+        "SELECT round, player_id, session_type, points FROM player_session_points WHERE season=?", (season,)
+    ):
+        session_points_by_round_player.setdefault(rr["round"], {}).setdefault(
+            rr["player_id"], {})[rr["session_type"]] = rr["points"]
 
-    # --- Manager lineup section (rows 3–58, 7 rows per manager) ---
-    lineups = {}   # {manager_name: {race_name: [{"name", "drs", "pts", "is_constructor"}, ...]}}
-    row = 3
-    while row <= 58:
-        team = ws_dc.cell(row=row, column=1).value
-        name = ws_dc.cell(row=row, column=2).value
-        if not team or not name:
-            row += 7
-            continue
-        name = str(name).strip()
-        if name not in lineups:
-            lineups[name] = {}
-
-        for race_name, col in race_cols_dc:
+    lineups = {m["name"]: {} for m in managers_raw}
+    session_points = {m["name"]: {} for m in managers_raw}   # {race_name: {session_type: total}}
+    for mrow in manager_rows:
+        mid, mname = mrow["id"], mrow["name"]
+        for round_no, rname in race_name_by_round.items():
+            picks_rows = list(conn.execute(
+                "SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=? "
+                "ORDER BY position", (season, round_no, mid)
+            ))
+            if not picks_rows:
+                continue
+            captain_id = captain_by_round_manager.get((round_no, mid))
+            round_points = points_by_round_player.get(round_no, {})
+            round_session_points = session_points_by_round_player.get(round_no, {})
             picks = []
-            for r in range(row, row + 7):
-                pick_name  = ws_dc.cell(row=r, column=col).value
-                drs_marker = ws_dc.cell(row=r, column=col + 1).value
-                pts_val    = ws_dc.cell(row=r, column=col + 4).value
-                if pick_name and str(pick_name).strip():
-                    pname = str(pick_name).strip()
-                    is_con = "." not in pname   # drivers have "X. Surname" initials
-                    try:
-                        pts = int(float(str(pts_val))) if pts_val not in (None, "", "#N/A") else None
-                    except (ValueError, TypeError):
-                        pts = None
-                    picks.append({
-                        "name":           pname,
-                        "drs":            bool(drs_marker and str(drs_marker).strip() in ("2X", "3X")),
-                        "drs_marker":     str(drs_marker).strip() if drs_marker and str(drs_marker).strip() in ("2X", "3X") else "",
-                        "pts":            pts,   # already the final earned pts (doubled/tripled by formula)
-                        "is_constructor": is_con,
-                    })
-            if picks:
-                lineups[name][race_name] = picks
-
-        row += 7
-
+            race_session_totals = {}
+            for prow in picks_rows:
+                pid = prow["player_id"]
+                pname, ptype = player_names.get(pid, (None, None))
+                is_drs = (pid == captain_id)
+                base_pts = round_points.get(pid)
+                pts = base_pts * 2 if (is_drs and base_pts is not None) else base_pts
+                picks.append({
+                    "name":           pname or f"Unknown #{pid}",
+                    "drs":            is_drs,
+                    "drs_marker":     "2X" if is_drs else "",
+                    "pts":            pts,
+                    "is_constructor": ptype == "constructor",
+                })
+                for stype, spts in round_session_points.get(pid, {}).items():
+                    if spts is None or not stype:
+                        continue
+                    val = spts * 2 if is_drs else spts
+                    race_session_totals[stype] = race_session_totals.get(stype, 0) + val
+            lineups[mname][rname] = picks
+            session_points[mname][rname] = race_session_totals
     data["lineups"] = lineups
+    data["session_points"] = session_points
 
-    # --- Actual driver results (rows 61–82) ---
-    # col+0 = base pts, col+1 = doubled pts (skip), col+2 = Budget +-, col+3 = Value
-    driver_results  = {}   # {driver_name: {race_name: {"pts": int, "bud": float}}}
-    for row in range(61, 83):
-        dname = ws_dc.cell(row=row, column=1).value
-        if not dname:
-            continue
-        dname = str(dname).strip()
-        driver_results[dname] = {}
-        for race_name, col in race_cols_dc:
-            pts_v = ws_dc.cell(row=row, column=col).value
-            bud_v = ws_dc.cell(row=row, column=col + 2).value
-            try:
-                pts = int(float(str(pts_v))) if pts_v not in (None, "", "#N/A") else None
-            except (ValueError, TypeError):
-                pts = None
-            try:
-                bud = round(float(str(bud_v)), 2) if bud_v not in (None, "", "#N/A") else None
-            except (ValueError, TypeError):
-                bud = None
-            driver_results[dname][race_name] = {"pts": pts, "bud": bud}
-
-    data["driver_results"] = driver_results
-
-    # --- Actual constructor results (rows 83–93) ---
-    # col+0 = pts, col+1 = Budget +- (no DRS column for constructors), col+2 = Value
-    constructor_results = {}   # {constructor_name: {race_name: {"pts": int, "bud": float}}}
-    for row in range(83, 94):
-        bval = ws_dc.cell(row=row, column=2).value   # col B = name
-        if not bval or str(bval).strip() in ("", "B", "Team"):
-            continue
-        cname = str(bval).strip()
-        constructor_results[cname] = {}
-        for race_name, col in race_cols_dc:
-            pts_v = ws_dc.cell(row=row, column=col).value
-            bud_v = ws_dc.cell(row=row, column=col + 1).value   # constructors: bud is col+1
-            try:
-                pts = int(float(str(pts_v))) if pts_v not in (None, "", "#N/A") else None
-            except (ValueError, TypeError):
-                pts = None
-            try:
-                bud = round(float(str(bud_v)), 2) if bud_v not in (None, "", "#N/A") else None
-            except (ValueError, TypeError):
-                bud = None
-            constructor_results[cname][race_name] = {"pts": pts, "bud": bud}
-
+    # driver_results/constructor_results — each player's own (non-doubled)
+    # result that race, keyed by name, for the "actual points regardless of
+    # who picked them" popularity view.
+    driver_results, constructor_results = {}, {}
+    for round_no, rname in race_name_by_round.items():
+        round_bud = bud_by_round_player.get(round_no, {})
+        for pid, pts in points_by_round_player.get(round_no, {}).items():
+            pname, ptype = player_names.get(pid, (None, None))
+            if not pname:
+                continue
+            target = constructor_results if ptype == "constructor" else driver_results
+            target.setdefault(pname, {})[rname] = {"pts": pts, "bud": round_bud.get(pid)}
+    data["driver_results"]      = driver_results
     data["constructor_results"] = constructor_results
 
-    # ── Reference Tables sheet (index 9) — budgets ──────────────────────────
-    ws_ref = wb.worksheets[9]
+    # ── Budget — team value per race, from race_results ───────────────────────
+    budgets = {}
+    for mrow in manager_rows:
+        mid, mname = mrow["id"], mrow["name"]
+        vals = [100.0]  # starting budget
+        for race in data["races_done"]:
+            row = conn.execute(
+                "SELECT team_value FROM race_results WHERE season=? AND round=? AND manager_id=?",
+                (season, race["round"], mid),
+            ).fetchone()
+            if row and row["team_value"] is not None:
+                vals.append(round(row["team_value"], 2))
+        budgets[mname] = vals
+    data["budgets"]           = budgets
+    data["budget_race_names"] = [r["name"] for r in data["races_done"]]
 
-    # Budget section starts at row 41 based on XML analysis
-    # Row 41 = header: Name, Pre-Season, Australia, China, ...
-    # Rows 42–50 = one per manager
-    # Anchor: find the row with exactly "Budget" in col A (not "Budget Change")
-    # then header row is immediately after
-    budget_header_row = None
-    for row in range(35, 55):
-        cell = ws_ref.cell(row=row, column=1).value
-        if cell and str(cell).strip() == "Budget":
-            budget_header_row = row + 1
-            break
+    # Standings-position history is left empty — compute() already falls back
+    # to deriving position-per-race from cumulative scores when no explicit
+    # table is present, which is exactly what we want here.
+    data["pos_race_names"]      = []
+    data["standings_positions"] = {}
 
-    budgets = {}   # {name: [pre_season, r1, r2, ...]}
-    budget_race_names = []
-
-    if budget_header_row:
-        # Read race headers from row
-        for col in range(2, ws_ref.max_column + 1):
-            hdr = ws_ref.cell(row=budget_header_row, column=col).value
-            if hdr:
-                budget_race_names.append(str(hdr).strip())
-            else:
-                break
-
-        for row in range(budget_header_row + 1, budget_header_row + 12):
-            name = ws_ref.cell(row=row, column=1).value
-            if not name:
-                continue
-            name = str(name).strip()
-            vals = []
-            for col in range(2, 2 + len(budget_race_names)):
-                v = ws_ref.cell(row=row, column=col).value
-                if v is not None and v != "":
-                    try:
-                        vals.append(round(float(str(v)), 2))
-                    except (ValueError, TypeError):
-                        break
-                else:
-                    break
-            if vals:
-                budgets[name] = vals
-
-    data["budgets"]            = budgets
-    data["budget_race_names"]  = budget_race_names
-
-    # ── Reference Tables sheet — overall standings positions per race ─────────
-    # Anchor: find the row with "Position changes" in col A, then header is next row
-    ws_ref2 = wb.worksheets[9]
-    pos_header_row = None
-    for r in range(1, ws_ref2.max_row + 1):
-        cell_val = ws_ref2.cell(row=r, column=1).value
-        if cell_val and "Position changes" in str(cell_val):
-            pos_header_row = r + 1   # header row is immediately after the label
-            break
-
-    pos_race_names = []
-    standings_positions = {}
-    if pos_header_row:
-        for col in range(2, ws_ref2.max_column + 1):
-            hdr = ws_ref2.cell(row=pos_header_row, column=col).value
-            if hdr and str(hdr).strip():
-                pos_race_names.append(str(hdr).strip())
-            else:
-                break
-        for r in range(pos_header_row + 1, pos_header_row + 15):
-            nm = ws_ref2.cell(row=r, column=1).value
-            if not nm:
-                break
-            nm = str(nm).strip()
-            vals = []
-            for col in range(2, 2 + len(pos_race_names)):
-                v = ws_ref2.cell(row=r, column=col).value
-                try:
-                    vals.append(int(float(str(v))) if v is not None else None)
-                except (ValueError, TypeError):
-                    vals.append(None)
-            standings_positions[nm] = vals
-
-    data["pos_race_names"]       = pos_race_names
-    data["standings_positions"]  = standings_positions
-
+    conn.close()
     return data
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 2 — COMPUTE DERIVED DATA
 # ─────────────────────────────────────────────────────────────────────────────
 
-def compute(data):
-    managers    = data["managers"]
-    races_done  = data["races_done"]
-    finish_dist = data["finish_dist"]
-    chips_used  = data["chips_used"]
-    budgets     = data["budgets"]
-    budget_races= data["budget_race_names"]
-    lineups     = data["lineups"]
+def rank_with_ties(scored_names):
+    """scored_names: [(name, pts), ...]. Returns rank groups using standard
+    competition ranking — equal scores share a rank, and the next distinct
+    score skips ahead by the tie's size (two tied for 1st means the next
+    score is 3rd, not 2nd), the same convention an actual race podium uses.
+    Return shape: [(rank, [tied names], pts), ...], highest score first."""
+    ordered = sorted(scored_names, key=lambda x: -x[1])
+    groups, i, rank = [], 0, 1
+    while i < len(ordered):
+        pts = ordered[i][1]
+        tied = [n for n, p in ordered[i:] if p == pts]
+        groups.append((rank, tied, pts))
+        rank += len(tied)
+        i += len(tied)
+    return groups
 
-    n_done = len(races_done)
+
+def compute(data):
+    managers        = data["managers"]
+    races_done      = data["races_done"]
+    races_finalized = data["races_finalized"]
+    chips_used      = data["chips_used"]
+    budgets         = data["budgets"]
+    budget_races    = data["budget_race_names"]
+    lineups         = data["lineups"]
+
+    # "Complete" means actually finalized, not just live/in-progress — a race
+    # that's only partway through (points included live per Tim's call on the
+    # season totals) shouldn't count as done until F1 says the whole gameday
+    # is scored.
+    n_done = len(races_finalized)
     n_total = len(data["races"])
+    finalized_names = {r["name"] for r in races_finalized}
 
     # Sort managers by rank for consistent ordering
     managers_sorted = sorted(managers, key=lambda m: m["rank"])
 
     # ── Points progression (cumulative per race) ─────────────────────────────
-    # data[0] = 0 (pre-season), then cumulative after each completed race
+    # data[0] = 0 (pre-season), then cumulative after each completed race —
+    # deliberately includes any live/in-progress race, so the season totals
+    # and this chart track along in real time as a weekend unfolds.
     for m in managers_sorted:
         cum = [0]
         running = 0
@@ -465,28 +400,52 @@ def compute(data):
             cum.append(running)
         m["cumulative"] = cum
 
-    # ── Per-race rankings ────────────────────────────────────────────────────
+    # ── Per-race rankings — built for every race with data (live included),
+    # so "current standings for this race" can still be shown while it's in
+    # progress, but tagged with is_final so nothing renders it as a decided
+    # result (podium/winner) before F1 says the whole gameday is scored.
+    sessions_by_round = data.get("sessions_by_round", {})
     for race in races_done:
         rname = race["name"]
         scores_this_race = [(m["name"], m["scores"].get(rname, 0)) for m in managers_sorted]
-        scores_this_race.sort(key=lambda x: -x[1])
-        race["ranking"] = scores_this_race  # [(name, pts), ...]
-        race["winner"]  = scores_this_race[0][0] if scores_this_race else ""
+        race["rank_groups"] = rank_with_ties(scores_this_race)
+        race["ranking"]     = sorted(scores_this_race, key=lambda x: -x[1])
+        race["is_final"]    = rname in finalized_names
+        race["winner"]      = " & ".join(race["rank_groups"][0][1]) if race["rank_groups"] else ""
+        race["is_sprint"]   = any(
+            "sprint" in (s.get("type") or "").lower()
+            for s in sessions_by_round.get(race["round"], [])
+        )
 
-    # ── Podiums — derived from per-race rankings above, same source Race Breakdown
-    # uses. Replaces the Podiums worksheet read so the two pages can't drift apart
-    # (e.g. when the Podiums sheet lags behind a newly-entered race's scores).
-    data["podiums"] = [
-        {
-            "race":   race["name"],
-            "first":  race["ranking"][0][0] if len(race["ranking"]) > 0 else "",
-            "second": race["ranking"][1][0] if len(race["ranking"]) > 1 else "",
-            "third":  race["ranking"][2][0] if len(race["ranking"]) > 2 else "",
-        }
-        for race in races_done
-    ]
+    # ── Podiums — only from finalized races. Ties share a position (e.g. two
+    # managers both shown as "1st"), matching what the F1 Fantasy leaderboard
+    # itself shows for a tied race, rather than us arbitrarily picking one.
+    data["podiums"] = []
+    for race in races_finalized:
+        groups = race["rank_groups"]
+        by_rank = {g[0]: g[1] for g in groups}
+        data["podiums"].append({
+            "race":      race["name"],
+            "is_sprint": race.get("is_sprint", False),
+            "first":     by_rank.get(1, []),
+            "second":    by_rank.get(2, []),
+            "third":     by_rank.get(3, []),
+        })
 
-    # ── Position history — from Reference Tables (read in read_workbook) ──────
+    # ── Finish-position distribution — from the same finalized-race rank
+    # groups as podiums, so a tied result credits every tied manager at that
+    # shared rank instead of one of them getting silently bumped down (and
+    # potentially dropping out of the top-3 tally entirely).
+    n_finish_cols = data["n_finish_cols"]
+    finish_dist = {m["name"]: [0] * n_finish_cols for m in managers_sorted}
+    for race in races_finalized:
+        for rank, names, _pts in race["rank_groups"]:
+            if rank <= n_finish_cols:
+                for name in names:
+                    finish_dist[name][rank - 1] += 1
+    data["finish_dist"] = finish_dist
+
+    # ── Position history — derived from cumulative scores when not tracked ───
     pos_race_names      = data.get("pos_race_names", [])
     standings_positions = data.get("standings_positions", {})
 
@@ -496,19 +455,28 @@ def compute(data):
         positions = []
         for i, race in enumerate(races_done):
             rname = race["name"]
+            # A standings position is itself a declared result for that
+            # checkpoint (it can still shift before a live race actually
+            # finishes) — same rule as podiums: nothing shown until final.
+            if not race.get("is_final", False):
+                positions.append(None)
+                continue
+            pos = None
             if rname in pos_race_names:
                 idx = pos_race_names.index(rname)
                 if idx < len(raw_positions) and raw_positions[idx] is not None:
-                    positions.append(raw_positions[idx])
-                else:
-                    # fallback: derive from cumulative scores
-                    cum_scores = {mm["name"]: sum(mm["scores"].get(rd["name"], 0)
-                                  for rd in races_done[:i+1]) for mm in managers_sorted}
-                    sorted_cum = sorted(cum_scores.items(), key=lambda x: -x[1])
-                    pos_map = {n: j+1 for j, (n, _) in enumerate(sorted_cum)}
-                    positions.append(pos_map.get(name))
-            else:
-                positions.append(None)
+                    pos = raw_positions[idx]
+            if pos is None:
+                # No explicitly-tracked position for this race (the normal
+                # case now — there's no separate positions table at all) —
+                # derive it from cumulative scores through this race instead
+                # of leaving it blank.
+                cum_scores = {mm["name"]: sum(mm["scores"].get(rd["name"], 0)
+                              for rd in races_done[:i+1]) for mm in managers_sorted}
+                sorted_cum = sorted(cum_scores.items(), key=lambda x: -x[1])
+                pos_map = {n: j+1 for j, (n, _) in enumerate(sorted_cum)}
+                pos = pos_map.get(name)
+            positions.append(pos)
         m["positions"] = positions
 
     # ── Chip usage per manager ───────────────────────────────────────────────
@@ -554,19 +522,20 @@ def compute(data):
     best_avg  = max(managers_sorted, key=lambda m: m["avg"])
     worst_avg = min(managers_sorted, key=lambda m: m["avg"])
 
-    # Most consistent = lowest std dev of per-race finish positions (not overall standings)
-    # Compute per-race finish position for each manager from scores
+    # Most consistent = lowest std dev of per-race finish positions (not overall
+    # standings). Only counts finalized races (a live/partial race doesn't have
+    # a decided finish position yet), and reuses the same tie-aware ranking
+    # built above rather than re-deriving it independently.
     import statistics
     for m in managers_sorted:
         race_finishes = []
-        for race in races_done:
-            rname = race["name"]
-            scores_this = {mm["name"]: mm["scores"].get(rname) for mm in managers_sorted
-                          if mm["scores"].get(rname) is not None}
-            if m["name"] in scores_this:
-                sorted_scores = sorted(scores_this.items(), key=lambda x: -x[1])
-                pos_map = {n: i+1 for i, (n,_) in enumerate(sorted_scores)}
-                race_finishes.append(pos_map[m["name"]])
+        for race in races_finalized:
+            if race["name"] not in m["scores"]:
+                continue
+            for rank, names, _pts in race["rank_groups"]:
+                if m["name"] in names:
+                    race_finishes.append(rank)
+                    break
         m["race_finishes"] = race_finishes
 
     def finish_std(m):
@@ -589,6 +558,17 @@ def compute(data):
                 biggest_swing_val = swing
                 biggest_swing_m = m
 
+    # Transfer activity — straight from the API's own per-race transfer count
+    # (usersubs), not derived from diffing rosters race-to-race.
+    for m in managers_sorted:
+        m["total_transfers"] = sum(m["transfers"].values())
+    most_transfers_m = max(managers_sorted, key=lambda m: m["total_transfers"])
+
+    # Bad luck — points lost to a pick that didn't participate that race.
+    for m in managers_sorted:
+        m["total_inactive_penalty"] = sum(m["inactive_penalty"].values())
+    worst_luck_m = max(managers_sorted, key=lambda m: m["total_inactive_penalty"])
+
     data["highlights"] = {
         "best":            best,
         "worst":           worst,
@@ -596,6 +576,8 @@ def compute(data):
         "worst_avg":       worst_avg,
         "most_consistent": (most_consistent, pos_desc),
         "biggest_swing":   (biggest_swing_m, biggest_swing_val),
+        "most_transfers":  most_transfers_m,
+        "worst_luck":      worst_luck_m,
     }
 
     data["managers_sorted"] = managers_sorted
@@ -626,6 +608,162 @@ def chip_pill(label, bg, tc, small=False):
             f'font-size:{size};padding:{pad}">{label}</span>')
 
 
+def sprint_pill(small=False):
+    size = "8px" if small else "9px"
+    pad  = "1px 5px" if small else "1px 6px"
+    return (f'<span style="background:#f0f0f0;color:#222;font-weight:600;'
+            f'border-radius:4px;font-size:{size};padding:{pad};margin-left:5px;'
+            f'letter-spacing:.03em">SPRINT</span>')
+
+
+def race_label(race, small=False):
+    """Race name, with a SPRINT pill appended when that weekend had a sprint
+    session — reused everywhere a race name shows up as an HTML label."""
+    return race["name"] + (sprint_pill(small) if race.get("is_sprint") else "")
+
+
+def _global_standing_section(data):
+    """Current global-rank standing table — how the league stacks up against
+    every F1 Fantasy player worldwide. Lives at the bottom of the Leaderboard
+    page rather than its own tab."""
+    M = data["managers_sorted"]
+
+    # Approximate registered-player counts, as displayed in F1 Fantasy's own
+    # UI (the API exposes neither figure directly — confirmed via HAR review
+    # — so these are "+"-qualified approximations Tim read off the leaderboard
+    # page itself, not exact counts). Percentiles below are approximate too.
+    TOTAL_GLOBAL_PLAYERS = 2_100_000
+    TOTAL_NZ_PLAYERS     = 27_500
+
+    def percentile(rank, total):
+        if not total or not rank:
+            return None
+        return round(rank / total * 100, 2)
+
+    rows = []
+    for m in M:
+        gr = m.get("global_ranks", {})
+        cur_ov = next((v["ovrank"] for v in reversed(list(gr.values())) if v.get("ovrank") is not None), None)
+        gd_entries = [(rname, v["gdrank"]) for rname, v in gr.items() if v.get("gdrank") is not None]
+        best_gd = min(gd_entries, key=lambda x: x[1]) if gd_entries else None
+        rows.append({"m": m, "cur_ov": cur_ov, "best_gd": best_gd})
+
+    rows.sort(key=lambda r: (r["cur_ov"] if r["cur_ov"] is not None else 10**9))
+
+    def fmt_rank(n):
+        return f"{n:,}" if n is not None else "—"
+
+    def fmt_total(n):
+        if n >= 1_000_000:
+            return f"{n/1_000_000:g}m+"
+        if n >= 1_000:
+            return f"{n/1_000:g}k+"
+        return f"{n}+"
+
+    def rank_pct_html(rank, total):
+        """Rank right-aligned with its approximate percentile as small grey
+        text alongside it — same two-sub-column pattern as the Best Single
+        Race cell, so the gap (not the text block) sits on the column center."""
+        if rank is None:
+            return '<div style="text-align:center">—</div>'
+        pct = percentile(rank, total)
+        pct_html = f'<div style="text-align:left;color:#555;font-size:11px;align-self:center">(top {pct}%)</div>' if pct is not None else ""
+        return (
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
+            f'<div style="text-align:right">{fmt_rank(rank)}</div>'
+            f'{pct_html}'
+            f'</div>'
+        )
+
+    # Dedicated grid template — deliberately not reusing Budget Tracker's
+    # .brow/.bcol classes, which are hardcoded to narrow (52-60px) columns
+    # sized for short currency figures, not longer rank numbers.
+    grid_cols = "26px minmax(70px,1fr) minmax(120px,1fr) minmax(110px,1fr) minmax(140px,1fr)"
+
+    rows_html = ""
+    for r in rows:
+        m = r["m"]
+        # NZ rank comes from F1's public top-500-NZ snapshot feed, not a
+        # per-round field — a manager ranked below 500th nationally has no
+        # row at all, hence "—" here rather than a fabricated number.
+        nz_html = rank_pct_html(m.get("nz_rank"), TOTAL_NZ_PLAYERS)
+        cur_ov_html = rank_pct_html(r["cur_ov"], TOTAL_GLOBAL_PLAYERS)
+        # Split into two sub-columns (rank right-aligned, race name left-
+        # aligned) so the gap between them — not the text block as a whole —
+        # sits on the column's true center line.
+        if r["best_gd"]:
+            best_gd_html = (
+                f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
+                f'<div style="text-align:right">{fmt_rank(r["best_gd"][1])}</div>'
+                f'<div style="text-align:left;color:#555;font-size:11px;align-self:center">({r["best_gd"][0]})</div>'
+                f'</div>'
+            )
+        else:
+            best_gd_html = '<div style="text-align:center">—</div>'
+        rows_html += f"""<div style="display:grid;grid-template-columns:{grid_cols};align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid #2a2a2a">
+  <div style="display:flex;align-items:center;justify-content:center"><div class="dot" style="background:{m['color']}"></div></div>
+  <div style="font-size:13px;font-weight:500">{m['name']}</div>
+  <div style="font-size:13px;font-weight:500">{cur_ov_html}</div>
+  <div style="font-size:13px;font-weight:500">{nz_html}</div>
+  <div style="font-size:13px">{best_gd_html}</div>
+</div>"""
+
+    return f"""<div class="section-label">Global standing</div>
+<div class="hint" style="margin-bottom:.5rem">How the league stacks up against every F1 Fantasy player worldwide. NZ rank only appears for players inside F1 Fantasy's public New Zealand top 500 — a "—" means ranked lower than that, not unranked.</div>
+<div class="card">
+  <div style="display:grid;grid-template-columns:{grid_cols};gap:10px;padding:4px 0 8px;align-items:end">
+    <div></div><div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Player</div><div style="font-size:9px;color:#555;text-align:center">Overall rank<br><span style="color:#444">out of {fmt_total(TOTAL_GLOBAL_PLAYERS)}</span></div><div style="font-size:9px;color:#555;text-align:center">NZ rank<br><span style="color:#444">out of {fmt_total(TOTAL_NZ_PLAYERS)}</span></div><div style="font-size:9px;color:#555;text-align:center">Best single race</div>
+  </div>
+  {rows_html}
+</div>
+<div class="hint">Percentiles are approximate — F1 Fantasy shows "{fmt_total(TOTAL_GLOBAL_PLAYERS)}" global and "{fmt_total(TOTAL_NZ_PLAYERS)}" NZ players rather than an exact count.</div>"""
+
+
+def _weekend_summary_data(data, races):
+    """Build the {race_name: {...}} structure behind the weekend points
+    summary table — used by both the Leaderboard's live box and the Race
+    Breakdown archive dropdown, so the two can never disagree."""
+    M = data["managers_sorted"]
+    sp = data.get("session_points", {})
+    sessions_by_round = data.get("sessions_by_round", {})
+    result = {}
+    for race in races:
+        rname = race["name"]
+        sessions = sessions_by_round.get(race["round"], [])
+        session_types = [s["type"] for s in sessions if s.get("type")]
+        # F1's own drivers feed doesn't expose Sprint Race points as a
+        # separate line item on a sprint weekend (confirmed against the live
+        # API: only Sprint Qualifying/Qualifying/Race appear, and they sum
+        # exactly to the known total) — so "Race" there is genuinely Sprint
+        # Race + Main Race combined. Label it honestly rather than implying
+        # a breakdown that doesn't exist upstream.
+        is_sprint_weekend = "Sprint Qualifying" in session_types
+        session_labels = [
+            "Sprint + Race" if (is_sprint_weekend and st == "Race") else st
+            for st in session_types
+        ]
+        rows = []
+        for m in M:
+            if rname not in m["scores"]:
+                continue
+            race_sp = sp.get(m["name"], {}).get(rname, {})
+            rows.append({
+                "name":     m["name"],
+                "color":    m["color"],
+                "sessions": [race_sp.get(st) for st in session_types],
+                "total":    m["scores"].get(rname),
+            })
+        rows.sort(key=lambda r: -(r["total"] if r["total"] is not None else -1))
+        result[rname] = {
+            "isFinal":       race.get("is_final", False),
+            "sessionTypes":  session_types,
+            "sessionLabels": session_labels,
+            "sessions":      [{"type": s.get("type"), "done": s.get("done", False)} for s in sessions],
+            "rows":          rows,
+        }
+    return result
+
+
 # ── 01 Leaderboard ───────────────────────────────────────────────────────────
 def panel_leaderboard(data):
     M   = data["managers_sorted"]
@@ -637,6 +775,69 @@ def panel_leaderboard(data):
     last   = M[-1]["total"] if M else 0
     gap_span = leader - last
 
+    # Latest-race box — season totals already include live partial points
+    # (per Tim's call), but there's nowhere else showing THIS race's own
+    # session-by-session breakdown. Always shows the most recent race, live
+    # or not — once it's finalized the header just switches to a "completed"
+    # summary and stays until the next race weekend gets any data at all.
+    # Same source (_weekend_summary_data) as the Race Breakdown archive
+    # dropdown, so the two can never disagree.
+    latest_race = max(RD, key=lambda r: r["round"]) if RD else None
+    live_box = ""
+    if latest_race:
+        rname = latest_race["name"]
+        d = _weekend_summary_data(data, [latest_race])[rname]
+        header_text = (f"{race_label(latest_race)} completed weekend points summary" if d["isFinal"]
+                       else f"{race_label(latest_race)} weekend in progress")
+
+        session_html = ""
+        if d["sessions"]:
+            pills = "".join(
+                f'<span style="font-size:10px;padding:2px 8px;border-radius:10px;'
+                f'background:{"#1a3010" if s["done"] else "#2a2a2a"};'
+                f'color:{"#88dd44" if s["done"] else "#888"}">'
+                f'{"✓" if s["done"] else "…"} {s["type"]}</span>'
+                for s in d["sessions"]
+            )
+            session_html = f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">{pills}</div>'
+
+        grid_cols = "minmax(70px,1fr) " + " ".join(["64px"] * len(d["sessionTypes"])) + " 64px"
+
+        table_header = (
+            f'<div style="display:grid;grid-template-columns:{grid_cols};gap:8px;padding:4px 0 6px;border-bottom:0.5px solid #2a2a2a">'
+            f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Manager</div>'
+            + "".join(f'<div style="font-size:9px;color:#555;text-align:right;white-space:nowrap">{st}</div>' for st in d["sessionLabels"])
+            + '<div style="font-size:9px;color:#555;text-align:right">Total</div>'
+            + '</div>'
+        )
+
+        table_rows = ""
+        for row in d["rows"]:
+            cells = "".join(
+                f'<div style="text-align:right;font-size:13px">{v if v is not None else "—"}</div>'
+                for v in row["sessions"]
+            )
+            table_rows += (
+                f'<div style="display:grid;grid-template-columns:{grid_cols};gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #2a2a2a">'
+                f'<div style="font-size:13px;font-weight:500;color:{row["color"]}">{row["name"]}</div>'
+                f'{cells}'
+                f'<div style="text-align:right;font-size:13px;font-weight:600">{row["total"] if row["total"] is not None else "—"}</div>'
+                f'</div>'
+            )
+
+        box_border = "1px solid #ffaa44" if not d["isFinal"] else "0.5px solid #2a2a2a"
+        title_color = "#ffaa44" if not d["isFinal"] else "#eee"
+
+        live_box = f"""<div class="card" style="border:{box_border};margin-bottom:1rem">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+    <span style="font-size:18px">🏁</span>
+    <span style="font-weight:600;color:{title_color}">{header_text}</span>
+  </div>
+  {session_html}
+  {table_header}
+  {table_rows}
+</div>"""
+
     # Latest podiums line
     medal_pill_styles = [
         "background:#2a2200;border:1px solid #FFD700;color:#FFD700",
@@ -646,11 +847,11 @@ def panel_leaderboard(data):
     medal_labels = ["1st", "2nd", "3rd"]
     pod_cards = ""
     for pod in reversed([p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]):
-        names = [pod["first"], pod["second"], pod["third"]]
-        if any(names):
+        slot_lists = [pod["first"], pod["second"], pod["third"]]
+        if any(slot_lists):
             slots_html = ""
-            for idx, name in enumerate(names):
-                if name:
+            for idx, names_in_slot in enumerate(slot_lists):
+                for name in names_in_slot:
                     mgr_color = MANAGER_COLOURS.get(name, "#888")
                     slots_html += (
                         f'<span style="display:inline-flex;align-items:center;gap:5px;'
@@ -661,7 +862,7 @@ def panel_leaderboard(data):
                     )
             pod_cards += (
                 f'<div class="podium-card">'
-                f'<div class="podium-pos">{pod["race"]}</div>'
+                f'<div class="podium-pos">{pod["race"]}{sprint_pill(small=True) if pod.get("is_sprint") else ""}</div>'
                 f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">{slots_html}</div>'
                 f'</div>'
             )
@@ -702,7 +903,7 @@ def panel_leaderboard(data):
         f'<span><span style="width:10px;height:10px;border-radius:2px;background:{m["color"]};display:inline-block"></span>{m["name"]}</span>'
         for m in M)
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
+    html = f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">F1 Fantasy League — Season Leaderboard · {ND} of {NT} races complete</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{ND}</div><div class="mc-lbl">Races complete</div></div>
@@ -710,6 +911,7 @@ def panel_leaderboard(data):
   <div class="mc"><div class="mc-val">{leader}</div><div class="mc-lbl">Pts — leader</div></div>
   <div class="mc"><div class="mc-val">{gap_span}</div><div class="mc-lbl">Pts gap P1 to P{len(M)}</div></div>
 </div>
+{live_box}
 <div class="section-label">Latest podiums</div>
 <div class="podium-row">{pod_cards}</div>
 <div class="section-label">Standings</div>
@@ -733,6 +935,7 @@ const leg=document.getElementById('legend-leaderboard');
 leg.innerHTML={js(legend_html)};
 }})();
 </script>"""
+    return html + _global_standing_section(data)
 
 
 # ── 02 Race Breakdown ─────────────────────────────────────────────────────────
@@ -758,49 +961,66 @@ def panel_race_breakdown(data):
                     "background:#221a12;border:0.5px solid #CD7F32"]
     ordinals     = ["1st","2nd","3rd","4th","5th","6th","7th","8th","9th"]
 
+    by_name = {m["name"]: m for m in M}
+
     race_cards_html = ""
     for race in RD:
         rname = race["name"]
         rnd   = race["round"]
-        scores_here = [(m, m["scores"].get(rname, 0)) for m in M if rname in m["scores"]]
-        scores_here.sort(key=lambda x: -x[1])
-        max_pts = scores_here[0][1] if scores_here else 1
+        is_final = race.get("is_final", False)
+        # Flatten the shared tie-aware rank groups back into (rank, manager, pts)
+        # rows — same source panel_leaderboard's podiums use, so a tie can never
+        # show differently between the two pages.
+        scores_here = []
+        for rank, names, pts in race.get("rank_groups", []):
+            for nm in names:
+                scores_here.append((rank, by_name[nm], pts))
+        max_pts = scores_here[0][2] if scores_here else 1
 
+        # A definitive medal podium only makes sense once the race is finalized
+        # — while it's still live, we show the same ranked list further down
+        # without declaring gold/silver/bronze.
         podium_html = ""
-        for j in range(min(3, len(scores_here))):
-            mm, pts = scores_here[j]
-            podium_html += (f'<div class="slot" style="{slot_styles[j]}">'
-                            f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
-                            f'<div><div class="slot-name" style="color:{mm["color"]}">{mm["name"]}</div>'
-                            f'<div class="slot-pts">{pts} pts</div></div></div>')
+        if is_final:
+            for rank, mm, pts in scores_here:
+                if rank > 3:
+                    break
+                style_idx = rank - 1
+                podium_html += (f'<div class="slot" style="{slot_styles[style_idx]}">'
+                                f'<div class="medal" style="{medal_styles[style_idx]}">{rank}</div>'
+                                f'<div><div class="slot-name" style="color:{mm["color"]}">{mm["name"]}</div>'
+                                f'<div class="slot-pts">{pts} pts</div></div></div>')
 
         score_rows = ""
-        for j, (mm, pts) in enumerate(scores_here):
+        for rank, mm, pts in scores_here:
             pct = round(max(0, pts) / max_pts * 100) if max_pts > 0 else 0
-            bg  = ["#FFD700","#C0C0C0","#CD7F32"][j] if j < 3 else "#2a2a2a"
-            tc  = ["#7a5800","#4a4a4a","#5a2d00"][j] if j < 3 else "#888"
+            if is_final and rank <= 3:
+                bg, tc = ["#FFD700","#C0C0C0","#CD7F32"][rank-1], ["#7a5800","#4a4a4a","#5a2d00"][rank-1]
+            else:
+                bg, tc = "#2a2a2a", "#888"
             race_chip = mm["chip_by_race"].get(rname)
             if race_chip and race_chip in CHIP_STYLES:
                 pill = chip_pill(race_chip, CHIP_STYLES[race_chip]["bg"], CHIP_STYLES[race_chip]["tc"], small=True)
             else:
                 pill = ""
             score_rows += (f'<div class="score-row">'
-                           f'<div class="pos-dot" style="background:{bg};color:{tc}">{j+1}</div>'
+                           f'<div class="pos-dot" style="background:{bg};color:{tc}">{rank}</div>'
                            f'<div><div class="score-name">{mm["name"]}{pill}</div>'
                            f'<div class="bar-bg"><div class="bar-fill" style="width:{pct}%;background:{mm["color"]}"></div></div></div>'
                            f'<div class="score-pts">{pts}</div></div>')
 
-        all_pts   = [s for _, s in scores_here]
+        all_pts   = [pts for _, _, pts in scores_here]
         rng       = max(all_pts) - min(all_pts) if all_pts else 0
         r_avg     = round(sum(all_pts) / len(all_pts)) if all_pts else 0
         negatives = sum(1 for s in all_pts if s < 0)
         neg_note  = f"{negatives} went negative" if negatives else "Everyone positive"
+        live_tag  = '' if is_final else '<span class="tag" style="background:#3a2a00;color:#ffaa44">Live — not final</span>'
 
         race_cards_html += f"""<div class="race-card">
-  <div class="race-header"><span class="race-title">{rname}</span><span class="race-round">Round {rnd}</span></div>
+  <div class="race-header"><span class="race-title">{race_label(race)}</span><span class="race-round">Round {rnd}</span></div>
   <div class="podium-strip">{podium_html}</div>
   {score_rows}
-  <div><span class="tag">Range: {rng} pts</span><span class="tag">Avg: {r_avg} pts</span><span class="tag">{neg_note}</span></div>
+  <div><span class="tag">Range: {rng} pts</span><span class="tag">Avg: {r_avg} pts</span><span class="tag">{neg_note}</span>{live_tag}</div>
 </div>"""
 
     # Grouped bar chart data
@@ -814,6 +1034,16 @@ def panel_race_breakdown(data):
         f'<span><span style="width:10px;height:10px;border-radius:2px;background:{m["color"]};display:inline-block"></span>{m["name"]}</span>'
         for m in M)
 
+    # ── Weekend points summary archive — same Qualifying/Sprint/Race/Total
+    # table as the Leaderboard's live box, but selectable for any race that
+    # has data, live or finalized.
+    weekend_by_race = _weekend_summary_data(data, RD)
+    latest_race = max(RD, key=lambda r: r["round"]) if RD else None
+    weekend_race_opts = "".join(
+        f'<option value="{r["name"]}"{" selected" if r is latest_race else ""}>{r["name"]}</option>'
+        for r in RD
+    )
+
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Race Breakdown · {ND} of {NT} races complete</div>
 <div class="metric-grid">
@@ -822,6 +1052,48 @@ def panel_race_breakdown(data):
   <div class="mc"><div class="mc-val">{low}</div><div class="mc-lbl">Lowest single race</div></div>
   <div class="mc"><div class="mc-val">{avg}</div><div class="mc-lbl">Avg points per race</div></div>
 </div>
+<div class="section-label">Weekend points summary</div>
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+  <label style="font-size:13px">Race</label>
+  <select id="weekendRaceSel">{weekend_race_opts}</select>
+</div>
+<div id="weekend-summary-display"></div>
+<script>
+(function(){{
+const weekendByRace={js(weekend_by_race)};
+const weekendSel=document.getElementById('weekendRaceSel');
+function renderWeekendSummary(rname){{
+  const d=weekendByRace[rname];
+  const el=document.getElementById('weekend-summary-display');
+  if(!d){{el.innerHTML='';return;}}
+  const headerText=d.isFinal?(rname+' completed weekend points summary'):(rname+' weekend in progress');
+  const boxBorder=d.isFinal?'0.5px solid #2a2a2a':'1px solid #ffaa44';
+  const titleColor=d.isFinal?'#eee':'#ffaa44';
+  const pills=d.sessions.map(s=>`<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${{s.done?'#1a3010':'#2a2a2a'}};color:${{s.done?'#88dd44':'#888'}}">${{s.done?'✓':'…'}} ${{s.type}}</span>`).join('');
+  const gridCols='minmax(70px,1fr) '+d.sessionTypes.map(()=>'64px').join(' ')+' 64px';
+  const headHtml=`<div style="display:grid;grid-template-columns:${{gridCols}};gap:8px;padding:4px 0 6px;border-bottom:0.5px solid #2a2a2a">
+    <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Manager</div>
+    ${{d.sessionLabels.map(st=>`<div style="font-size:9px;color:#555;text-align:right;white-space:nowrap">${{st}}</div>`).join('')}}
+    <div style="font-size:9px;color:#555;text-align:right">Total</div>
+  </div>`;
+  const rowsHtml=d.rows.map(r=>`<div style="display:grid;grid-template-columns:${{gridCols}};gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #2a2a2a">
+    <div style="font-size:13px;font-weight:500;color:${{r.color}}">${{r.name}}</div>
+    ${{r.sessions.map(v=>`<div style="text-align:right;font-size:13px">${{v===null?'—':v}}</div>`).join('')}}
+    <div style="text-align:right;font-size:13px;font-weight:600">${{r.total===null?'—':r.total}}</div>
+  </div>`).join('');
+  el.innerHTML=`<div class="card" style="border:${{boxBorder}}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="font-size:18px">🏁</span>
+      <span style="font-weight:600;color:${{titleColor}}">${{headerText}}</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${{pills}}</div>
+    ${{headHtml}}${{rowsHtml}}
+  </div>`;
+}}
+weekendSel.addEventListener('change',function(){{renderWeekendSummary(this.value);}});
+renderWeekendSummary(weekendSel.value);
+}})();
+</script>
 <div class="section-label">Round by round</div>
 {race_cards_html}
 <div class="section-label">Points per race — all managers</div>
@@ -899,13 +1171,13 @@ def panel_h2h(data):
             "races":     [m["scores"].get(r["name"], 0) for r in RD],
             "podiums":   [1 if any(
                              pod["race"] == r["name"] and
-                             pod[pos_key] == m["name"]
+                             m["name"] in pod[pos_key]
                              for pod in data["podiums"]
                              for pos_key in ["first","second","third"]
                            ) else 0
                           for r in RD],
             "wins":      [1 if any(
-                             pod["race"] == r["name"] and pod["first"] == m["name"]
+                             pod["race"] == r["name"] and m["name"] in pod["first"]
                              for pod in data["podiums"]
                            ) else 0
                           for r in RD],
@@ -1123,8 +1395,15 @@ def panel_budget(data):
         for m in M)
 
     import math
-    y_max = math.ceil((max_b + 2) / 2) * 2   # next even number at least 2m above highest budget
-    y_min = math.floor((min_b - 2) / 2) * 2  # next even number at least 2m below lowest budget
+    # The chart's axis bounds must come from the full season history for every
+    # manager (their line may have dipped lower, or peaked higher, than where
+    # they sit today) — using only *current* budgets (like the stat cards
+    # above do, correctly) would clip off those earlier highs/lows.
+    all_budget_values = [v for m in M for v in m["budgets"]]
+    hist_max = max(all_budget_values) if all_budget_values else max_b
+    hist_min = min(all_budget_values) if all_budget_values else min_b
+    y_max = math.ceil((hist_max + 2) / 2) * 2   # next even number at least 2m above highest-ever
+    y_min = math.floor((hist_min - 2) / 2) * 2  # next even number at least 2m below lowest-ever
     y_min = max(80, y_min)   # never go below 80m
     y_max = min(120, y_max)  # never go above 120m
 
@@ -1170,11 +1449,12 @@ def panel_podiums(data):
     POD = data["podiums"]
     ND  = data["n_done"]
     NT  = data["n_total"]
+    FD  = data["finish_dist"]
 
-    managers_with_pod = sum(1 for m in M
-                            if any(p["first"]==m["name"] or p["second"]==m["name"]
-                                   or p["third"]==m["name"] for p in POD))
-    diff_winners = len(set(p["first"] for p in POD if p["first"]))
+    # pod["first"]/["second"]/["third"] are lists now (a tied race credits
+    # every tied manager, not just one) — membership check, not equality.
+    managers_with_pod = sum(1 for m in M if sum(FD.get(m["name"], [0,0,0])[:3]) > 0)
+    diff_winners = len({name for p in POD for name in p["first"]})
 
     medal_styles = ["background:#FFD700;color:#7a5800",
                     "background:#C0C0C0;color:#4a4a4a",
@@ -1199,29 +1479,53 @@ def panel_podiums(data):
         filled = pod["first"] or pod["second"] or pod["third"]
         style = "" if filled else 'style="border-style:dashed;opacity:0.5"'
         slots = ""
-        for j, (key, pts_key) in enumerate([("first",""), ("second",""), ("third","")]):
-            name = pod[key]
-            if name:
-                pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
-                pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
+        for j, key in enumerate(["first", "second", "third"]):
+            names_in_slot = pod[key]
+            if names_in_slot:
+                names_html = ""
+                for name in names_in_slot:
+                    pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
+                    pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
+                    names_html += (f'<div><div class="slot-name" style="color:{get_color(name)}">'
+                                   f'{name}{get_chip_pill(name, pod["race"])}</div>{pts_html}</div>')
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
                           f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
-                          f'<div><div class="slot-name" style="color:{get_color(name)}">{name}{get_chip_pill(name, pod["race"])}</div>{pts_html}</div></div>')
+                          f'<div style="display:flex;flex-direction:column;gap:2px">{names_html}</div></div>')
             else:
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
                           f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
                           f'<div class="tbd">TBC</div></div>')
         cards_html += f"""<div class="race-podium" {style}>
-  <div class="race-header"><span class="race-title">{pod['race']}</span></div>
+  <div class="race-header"><span class="race-title">{pod['race']}{sprint_pill(small=True) if pod.get('is_sprint') else ''}</span></div>
   <div class="podium-slots">{slots}</div>
 </div>"""
 
-    # Podium share chart
-    p1 = [sum(1 for p in POD if p["first"]==m["name"]) for m in M]
-    p2 = [sum(1 for p in POD if p["second"]==m["name"]) for m in M]
-    p3 = [sum(1 for p in POD if p["third"]==m["name"]) for m in M]
-    names_labels = [m["name"] for m in M]
-    max_y = max(max(p1+p2+p3, default=0) + 1, 3)
+    # Podium share — same finish_dist the Stats tab uses, not an independent
+    # re-count from POD, so the two pages can't drift apart. Shown as one
+    # medal icon per podium finish rather than a stacked bar. CSS-colored
+    # circles, not emoji — emoji medal colors are drawn by the OS/browser's
+    # emoji font and can't be tuned (gold ended up reading too close to
+    # bronze), whereas these use the same explicit hex values as the medal
+    # badges elsewhere in the app.
+    def medal_dot(color):
+        return (f'<span style="display:inline-block;width:13px;height:13px;border-radius:50%;'
+                f'background:{color};box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)"></span>')
+
+    GOLD, SILVER, BRONZE = "#FFDE21", "#C0C0C0", "#CD7F32"
+
+    medal_rows_html = ""
+    for m in M:
+        fd = FD.get(m["name"], [0, 0, 0])
+        p1, p2, p3 = fd[0], fd[1], fd[2]
+        total = p1 + p2 + p3
+        icons = medal_dot(GOLD) * p1 + medal_dot(SILVER) * p2 + medal_dot(BRONZE) * p3
+        icons_html = icons if icons else '<span style="color:#555;font-size:12px">No podiums yet</span>'
+        medal_rows_html += f"""<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid #2a2a2a">
+  <div class="dot" style="background:{m['color']}"></div>
+  <div style="min-width:70px;font-size:13px;font-weight:500;flex-shrink:0">{m['name']}</div>
+  <div style="flex:1;display:flex;flex-wrap:wrap;gap:5px;align-items:center">{icons_html}</div>
+  <div style="font-size:12px;color:#888;min-width:20px;text-align:right;flex-shrink:0">{total}</div>
+</div>"""
 
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Podiums · Race results &amp; podium share</div>
@@ -1232,28 +1536,10 @@ def panel_podiums(data):
   <div class="mc"><div class="mc-val">{len(M) - managers_with_pod}</div><div class="mc-lbl">Managers without a podium</div></div>
 </div>
 <div class="section-label">Podium share</div>
-<div style="position:relative;height:260px"><canvas id="podiumChart"></canvas></div>
-<div class="legend" id="legend-podiums"></div>
-<script>
-(function(){{
-new Chart(document.getElementById('podiumChart'),{{
-  type:'bar',
-  data:{{labels:{js(names_labels)},datasets:[
-    {{label:'1st',data:{js(p1)},backgroundColor:'#FFD700',borderWidth:0}},
-    {{label:'2nd',data:{js(p2)},backgroundColor:'#C0C0C0',borderWidth:0}},
-    {{label:'3rd',data:{js(p3)},backgroundColor:'#CD7F32',borderWidth:0}}
-  ]}},
-  options:{{responsive:true,maintainAspectRatio:false,
-    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
-    scales:{{x:{{stacked:true,ticks:{{color:'#888'}},grid:{{display:false}}}},
-             y:{{stacked:true,max:{max_y},ticks:{{color:'#888',stepSize:1}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
-}});
-document.getElementById('legend-podiums').innerHTML=`
-  <span><span style="width:10px;height:10px;border-radius:2px;background:#FFD700;display:inline-block"></span>1st place</span>
-  <span><span style="width:10px;height:10px;border-radius:2px;background:#C0C0C0;display:inline-block"></span>2nd place</span>
-  <span><span style="width:10px;height:10px;border-radius:2px;background:#CD7F32;display:inline-block"></span>3rd place</span>`;
-}})();
-</script>
+<div class="hint" style="margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+  <span>{medal_dot(GOLD)} 1st</span><span>&middot;</span><span>{medal_dot(SILVER)} 2nd</span><span>&middot;</span><span>{medal_dot(BRONZE)} 3rd</span><span>— one dot per podium finish this season.</span>
+</div>
+<div class="card" style="padding:4px 16px">{medal_rows_html}</div>
 <div class="section-label">Race results</div>
 {cards_html}"""
 
@@ -1312,6 +1598,8 @@ def panel_stats(data):
     worst_avg_m                   = HL["worst_avg"]
     cons_m, cons_pos              = HL["most_consistent"]
     swing_m, swing_val            = HL["biggest_swing"]
+    transfers_m                   = HL["most_transfers"]
+    luck_m                        = HL["worst_luck"]
 
     def hl_row(name, desc):
         color = MANAGER_COLOURS.get(name, "#888")
@@ -1326,7 +1614,11 @@ def panel_stats(data):
         hl_row(best_avg_m["name"],  ["Best average per race",   f"{best_avg_m['avg']:.1f} pts/race"]) +
         hl_row(worst_avg_m["name"], ["Worst average per race",  f"{worst_avg_m['avg']:.1f} pts/race"]) +
         hl_row(cons_m["name"],  ["Most consistent",  cons_pos]) +
-        hl_row(swing_m["name"], ["Biggest position swing", f"{swing_val} places"])
+        hl_row(swing_m["name"], ["Biggest position swing", f"{swing_val} places"]) +
+        hl_row(transfers_m["name"], ["Most active trader", f"{transfers_m['total_transfers']} transfers"]) +
+        (hl_row(luck_m["name"], ["Worst luck", f"{luck_m['total_inactive_penalty']} pts lost to inactive picks"])
+         if luck_m["total_inactive_penalty"] > 0 else
+         hl_row("—", ["Worst luck", "No inactive-driver penalties yet"]))
     )
 
     fin_grid = f"26px minmax(70px,1fr) repeat({N_FIN},26px) 36px"
@@ -1381,13 +1673,11 @@ def panel_positions(data):
     # Longest streak at current position
     streak_best = ("—", 0)   # (manager, streak_length)
     for m in M:
-        if not m["positions"]:
-            continue
-        cur_pos = m["positions"][-1]
+        cur_pos = next((p for p in reversed(m["positions"]) if p is not None), None)
         if cur_pos is None:
             continue
         streak = 0
-        for p in reversed(m["positions"]):
+        for p in reversed([p for p in m["positions"] if p is not None]):
             if p == cur_pos:
                 streak += 1
             else:
@@ -1398,8 +1688,17 @@ def panel_positions(data):
     last_race_name = RD[-1]["name"] if RD else "—"
 
     # ── Standings movement table — clean card per manager ───────────────────
-    # Sorted by current (latest) position
-    sorted_cur = sorted(M, key=lambda m: (m["positions"][-1] if m["positions"] and m["positions"][-1] is not None else 99))
+    # "Current" position = the last non-None entry, not literally the last
+    # array slot — a live/not-yet-final race correctly leaves its own slot as
+    # None (see compute()), which would otherwise make every manager look
+    # position-less the moment any race is in progress.
+    def last_known_position(m):
+        for p in reversed(m["positions"]):
+            if p is not None:
+                return p
+        return None
+
+    sorted_cur = sorted(M, key=lambda m: (last_known_position(m) if last_known_position(m) is not None else 99))
 
     # Header row: race name + round number above each badge column
     # Use first word of race name as abbreviation to keep it compact
@@ -1426,13 +1725,14 @@ def panel_positions(data):
 
     rows_html = ""
     for m in sorted_cur:
-        if not m["positions"] or m["positions"][-1] is None:
+        non_none_idx = [i for i, p in enumerate(m["positions"]) if p is not None]
+        if not non_none_idx:
             continue
-        pos_cur   = m["positions"][-1]
+        cur_idx = non_none_idx[-1]
+        pos_cur = m["positions"][cur_idx]
         # Net = change since previous race (last two non-None positions)
-        non_none  = [p for p in m["positions"] if p is not None]
-        if len(non_none) >= 2:
-            net = non_none[-2] - non_none[-1]   # positive = moved up
+        if len(non_none_idx) >= 2:
+            net = m["positions"][non_none_idx[-2]] - pos_cur   # positive = moved up
         else:
             net = 0
 
@@ -1449,7 +1749,7 @@ def panel_positions(data):
         for ri, (race, pos) in enumerate(zip(RD, m["positions"])):
             if pos is None:
                 continue
-            is_cur = (ri == len(m["positions"]) - 1)
+            is_cur = (ri == cur_idx)
             bg = m["color"] if is_cur else "#1e1e1e"
             tc = "#0f0f0f" if is_cur else m["color"]
             race_badges += (
@@ -1540,6 +1840,11 @@ def panel_picks(data):
     RD          = data["races_done"]
     drv_results = data.get("driver_results", {})       # {driver_name: {race_name: pts}}
     con_results = data.get("constructor_results", {})  # {con_name:    {race_name: pts}}
+    season_pts  = data.get("player_season_points", {})
+
+    def by_season_points(names):
+        # Highest current season total first, not alphabetical.
+        return sorted(names, key=lambda n: -(season_pts.get(n) or 0))
 
     # Ordered list of races that have lineup data
     all_lineup_races = sorted(set(
@@ -1654,30 +1959,27 @@ def panel_picks(data):
             curr_d = {p["name"] for p in curr_picks if not p["is_constructor"]}
             curr_c = {p["name"] for p in curr_picks if p["is_constructor"]}
 
-            sold_d   = sorted(prev_d - curr_d)
-            bought_d = sorted(curr_d - prev_d)
-            sold_c   = sorted(prev_c - curr_c)
-            bought_c = sorted(curr_c - prev_c)
+            sold_d   = by_season_points(prev_d - curr_d)
+            bought_d = by_season_points(curr_d - prev_d)
+            sold_c   = by_season_points(prev_c - curr_c)
+            bought_c = by_season_points(curr_c - prev_c)
 
-            paired = []
-            for j in range(max(len(sold_d), len(bought_d))):
-                paired.append({"out": sold_d[j]   if j < len(sold_d)   else None,
-                                "in":  bought_d[j] if j < len(bought_d) else None,
-                                "isCon": False})
-            for j in range(max(len(sold_c), len(bought_c))):
-                paired.append({"out": sold_c[j]   if j < len(sold_c)   else None,
-                                "in":  bought_c[j] if j < len(bought_c) else None,
-                                "isCon": True})
+            # One combined out/in group per manager, not paired index-to-index
+            # — a 2-for-2 swap is one trade of a pair for a pair, not two
+            # separate 1-to-1 swaps, so it gets a single arrow, not two.
+            outs = [{"name": n, "isCon": False} for n in sold_d]   + [{"name": n, "isCon": True} for n in sold_c]
+            ins  = [{"name": n, "isCon": False} for n in bought_d] + [{"name": n, "isCon": True} for n in bought_c]
 
             total_trades = len(sold_d) + len(sold_c)
 
-            if paired or is_wildcard:
+            if outs or ins or is_wildcard:
                 race_trades.append({
                     "name":       m["name"],
                     "color":      m["color"],
                     "team":       m["team"],
                     "wildcard":   is_wildcard,
-                    "trades":     paired,
+                    "outs":       outs,
+                    "ins":        ins,
                     "tradeCount": total_trades,
                 })
 
@@ -1771,66 +2073,88 @@ def panel_picks(data):
             curr_d = {p["name"] for p in curr_picks if not p["is_constructor"]}
             curr_c = {p["name"] for p in curr_picks if p["is_constructor"]}
 
-            sold_d   = sorted(prev_d - curr_d)
-            bought_d = sorted(curr_d - prev_d)
-            sold_c   = sorted(prev_c - curr_c)
-            bought_c = sorted(curr_c - prev_c)
+            sold_d   = by_season_points(prev_d - curr_d)
+            bought_d = by_season_points(curr_d - prev_d)
+            sold_c   = by_season_points(prev_c - curr_c)
+            bought_c = by_season_points(curr_c - prev_c)
 
-            for pairs, is_con, results, ranks in [
-                (list(zip(sold_d, bought_d)), False, drv_results, drv_ranks),
-                (list(zip(sold_c, bought_c)), True,  con_results, con_ranks),
-            ]:
-                for sold_name, bought_name in pairs:
-                    sold_r   = results.get(sold_name,   {}).get(rname) or {}
-                    bought_r = results.get(bought_name, {}).get(rname) or {}
-                    sold_pts   = sold_r.get("pts")
-                    sold_bud   = sold_r.get("bud")
-                    bought_pts = bought_r.get("pts")
-                    bought_bud = bought_r.get("bud")
-                    if sold_pts is None or bought_pts is None:
-                        continue
+            # Whole trade evaluated as one group vs. one group — a 2-for-2
+            # swap is judged on its combined outcome, not as two arbitrary
+            # index-paired 1-to-1 "sold X for Y" comparisons that never
+            # actually happened that way (matches the single-arrow display).
+            sold_all   = [(n, False) for n in sold_d] + [(n, True) for n in sold_c]
+            bought_all = [(n, False) for n in bought_d] + [(n, True) for n in bought_c]
+            if not sold_all or not bought_all:
+                continue
 
-                    sold_rank   = ranks.get(sold_name,   {})
-                    bought_rank = ranks.get(bought_name, {})
-                    if not sold_rank or not bought_rank:
-                        continue
+            results_by_type = {False: drv_results, True: con_results}
+            ranks_by_type   = {False: drv_ranks,   True: con_ranks}
 
-                    sold_score   = (sold_rank["pts_pct"]   + sold_rank["bud_pct"])   / 2
-                    bought_score = (bought_rank["pts_pct"]  + bought_rank["bud_pct"]) / 2
-                    diff_score   = sold_score - bought_score   # positive = regret, negative = good trade
+            def gather(group):
+                pts_list, bud_list, pct_list = [], [], []
+                for gname, gis_con in group:
+                    gr = results_by_type[gis_con].get(gname, {}).get(rname) or {}
+                    gpts = gr.get("pts")
+                    if gpts is None:
+                        return None
+                    grank = ranks_by_type[gis_con].get(gname)
+                    if not grank:
+                        return None
+                    pts_list.append(gpts)
+                    bud_list.append(gr.get("bud") or 0)
+                    pct_list.append((grank["pts_pct"] + grank["bud_pct"]) / 2)
+                return pts_list, bud_list, pct_list
 
-                    entry = {
-                        "manager":   m["name"],
-                        "color":     m["color"],
-                        "sold":      sold_name,
-                        "bought":    bought_name,
-                        "soldPts":   sold_pts,
-                        "boughtPts": bought_pts,
-                        "soldBud":   sold_bud,
-                        "boughtBud": bought_bud,
-                        "nextRace":  rname,
-                        "soldAfter": prev_rname,
-                        "isCon":     is_con,
-                    }
+            sold_data   = gather(sold_all)
+            bought_data = gather(bought_all)
+            if sold_data is None or bought_data is None:
+                continue
+            sold_pts_l, sold_bud_l, sold_pct_l = sold_data
+            bought_pts_l, bought_bud_l, bought_pct_l = bought_data
 
-                    if diff_score > 0 and sold_pts > bought_pts:
-                        # Regret: sold outperformed bought
-                        pts_margin = sold_pts - bought_pts
-                        bud_margin = round((sold_bud or 0) - (bought_bud or 0), 2)
-                        regrets.append({**entry,
-                            "ptsMargin": pts_margin,
-                            "budMargin": bud_margin,
-                            "score":     round(diff_score * 100, 1),
-                        })
-                    elif diff_score < 0 and bought_pts > sold_pts:
-                        # Win: bought outperformed sold
-                        pts_margin = bought_pts - sold_pts
-                        bud_margin = round((bought_bud or 0) - (sold_bud or 0), 2)
-                        wins.append({**entry,
-                            "ptsMargin": pts_margin,
-                            "budMargin": bud_margin,
-                            "score":     round(-diff_score * 100, 1),
-                        })
+            sold_score   = sum(sold_pct_l) / len(sold_pct_l)
+            bought_score = sum(bought_pct_l) / len(bought_pct_l)
+            diff_score   = sold_score - bought_score   # positive = regret, negative = good trade
+
+            sold_total_pts   = sum(sold_pts_l)
+            bought_total_pts = sum(bought_pts_l)
+            sold_total_bud   = round(sum(sold_bud_l), 2)
+            bought_total_bud = round(sum(bought_bud_l), 2)
+
+            entry = {
+                "manager":   m["name"],
+                "color":     m["color"],
+                "sold":      [{"name": n, "isCon": c} for n, c in sold_all],
+                "bought":    [{"name": n, "isCon": c} for n, c in bought_all],
+                "soldPts":   sold_total_pts,
+                "boughtPts": bought_total_pts,
+                "soldBud":   sold_total_bud,
+                "boughtBud": bought_total_bud,
+                "nextRace":  rname,
+                "soldAfter": prev_rname,
+            }
+
+            # Swing is always "bought minus sold" — the actual net effect on
+            # the manager's score/value from having made the trade, so a
+            # regret correctly shows as negative (you'd have scored more had
+            # you not made the swap), not a positive "how much you lost by".
+            pts_margin = round(bought_total_pts - sold_total_pts, 1)
+            bud_margin = round(bought_total_bud - sold_total_bud, 2)
+
+            if diff_score > 0 and sold_total_pts > bought_total_pts:
+                # Regret: sold group outperformed bought group
+                regrets.append({**entry,
+                    "ptsMargin": pts_margin,
+                    "budMargin": bud_margin,
+                    "score":     round(diff_score * 100, 1),
+                })
+            elif diff_score < 0 and bought_total_pts > sold_total_pts:
+                # Win: bought group outperformed sold group
+                wins.append({**entry,
+                    "ptsMargin": pts_margin,
+                    "budMargin": bud_margin,
+                    "score":     round(-diff_score * 100, 1),
+                })
 
     regrets.sort(key=lambda x: -x["score"])
     top_regrets = regrets[:3]
@@ -1890,87 +2214,45 @@ def panel_picks(data):
 <div class="section-label">Loyal holds — picked every race</div>
 <div class="card" style="padding:12px 16px">{items}</div>"""
 
+    def trade_swing_table(rows):
+        body = ""
+        for r in rows:
+            sold_names   = ", ".join(item["name"] for item in r["sold"])
+            bought_names = ", ".join(item["name"] for item in r["bought"])
+            body += (
+                f'<tr>'
+                f'<td><div style="display:flex;align-items:center;gap:6px;white-space:nowrap">'
+                f'<div class="team-dot" style="background:{r["color"]}"></div>{r["manager"]}</div></td>'
+                f'<td style="color:#888;white-space:nowrap">{r["nextRace"]}</td>'
+                f'<td style="color:#f44336">{sold_names}</td>'
+                f'<td style="color:#4caf50">{bought_names}</td>'
+                f'<td style="white-space:nowrap">{fmt_pts(r["ptsMargin"])} pts</td>'
+                f'<td style="white-space:nowrap">{fmt_bud(r["budMargin"])}</td>'
+                f'<td style="color:#888">{r["score"]}</td>'
+                f'</tr>'
+            )
+        return f"""<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+<table class="regret-table">
+  <thead><tr>
+    <th>Manager</th><th>Race</th><th>Sold</th><th>Bought</th><th>Pts swing</th><th>Value swing</th><th>Score</th>
+  </tr></thead>
+  <tbody>{body}</tbody>
+</table>
+</div>"""
+
     regret_html = ""
     if top_regrets:
-        cards = ""
-        for r in top_regrets:
-            sold_pts_txt   = fmt_pts(r["soldPts"])
-            bought_pts_txt = fmt_pts(r["boughtPts"])
-            sold_bud_txt   = fmt_bud(r["soldBud"])
-            bought_bud_txt = fmt_bud(r["boughtBud"])
-            pts_margin_txt = fmt_pts(r["ptsMargin"])
-            bud_margin_txt = fmt_bud(r["budMargin"])
-            cards += (
-                f'<div class="regret-card">'
-                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-                f'<div class="team-dot" style="background:{r["color"]}"></div>'
-                f'<div class="team-name">{r["manager"]}</div>'
-                f'<div style="margin-left:auto;font-size:11px;color:#888">{r["nextRace"]}</div>'
-                f'</div>'
-                f'<div class="regret-swap">'
-                f'<div class="regret-asset regret-out">'
-                f'<div class="regret-asset-name">{r["sold"]}</div>'
-                f'<div class="regret-asset-pts" style="color:#4caf50">{sold_pts_txt} pts</div>'
-                f'<div class="regret-asset-bud" style="color:#4caf50">{sold_bud_txt}</div>'
-                f'</div>'
-                f'<div class="regret-arrow">\u2192</div>'
-                f'<div class="regret-asset regret-in">'
-                f'<div class="regret-asset-name">{r["bought"]}</div>'
-                f'<div class="regret-asset-pts" style="color:#f44336">{bought_pts_txt} pts</div>'
-                f'<div class="regret-asset-bud" style="color:#f44336">{bought_bud_txt}</div>'
-                f'</div>'
-                f'</div>'
-                f'<div class="regret-footer">'
-                f'<span class="regret-margin">{pts_margin_txt} pts &middot; {bud_margin_txt} value</span>'
-                f'<span class="regret-score">score {r["score"]}</span>'
-                f'</div>'
-                f'</div>'
-            )
         regret_html = f"""
 <div class="section-label">Trade regrets — sold too soon</div>
-<div class="hint" style="margin-bottom:12px">Trades where the sold asset outranked its replacement on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
-<div class="regret-grid">{cards}</div>"""
+<div class="hint" style="margin-bottom:12px">Trades where the sold group outranked its replacement on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
+{trade_swing_table(top_regrets)}"""
 
     wins_html = ""
     if top_wins:
-        cards = ""
-        for r in top_wins:
-            sold_pts_txt   = fmt_pts(r["soldPts"])
-            bought_pts_txt = fmt_pts(r["boughtPts"])
-            sold_bud_txt   = fmt_bud(r["soldBud"])
-            bought_bud_txt = fmt_bud(r["boughtBud"])
-            pts_margin_txt = fmt_pts(r["ptsMargin"])
-            bud_margin_txt = fmt_bud(r["budMargin"])
-            cards += (
-                f'<div class="regret-card">'
-                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
-                f'<div class="team-dot" style="background:{r["color"]}"></div>'
-                f'<div class="team-name">{r["manager"]}</div>'
-                f'<div style="margin-left:auto;font-size:11px;color:#888">{r["nextRace"]}</div>'
-                f'</div>'
-                f'<div class="regret-swap">'
-                f'<div class="regret-asset" style="flex:1;background:#111;border-radius:6px;padding:7px 9px;border:0.5px solid #f4433644;min-width:0">'
-                f'<div class="regret-asset-name">{r["sold"]}</div>'
-                f'<div class="regret-asset-pts" style="color:#f44336">{sold_pts_txt} pts</div>'
-                f'<div class="regret-asset-bud" style="color:#f44336">{sold_bud_txt}</div>'
-                f'</div>'
-                f'<div class="regret-arrow">\u2192</div>'
-                f'<div class="regret-asset" style="flex:1;background:#111;border-radius:6px;padding:7px 9px;border:0.5px solid #4caf5044;min-width:0">'
-                f'<div class="regret-asset-name">{r["bought"]}</div>'
-                f'<div class="regret-asset-pts" style="color:#4caf50">{bought_pts_txt} pts</div>'
-                f'<div class="regret-asset-bud" style="color:#4caf50">{bought_bud_txt}</div>'
-                f'</div>'
-                f'</div>'
-                f'<div class="regret-footer">'
-                f'<span style="font-size:11px;color:#4caf50;font-weight:500">+{r["ptsMargin"]} pts &middot; {bud_margin_txt} value</span>'
-                f'<span class="regret-score">score {r["score"]}</span>'
-                f'</div>'
-                f'</div>'
-            )
         wins_html = f"""
 <div class="section-label">Best trades — great calls</div>
-<div class="hint" style="margin-bottom:12px">Trades where the bought asset outranked what was sold on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
-<div class="regret-grid">{cards}</div>"""
+<div class="hint" style="margin-bottom:12px">Trades where the bought group outranked what was sold on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
+{trade_swing_table(top_wins)}"""
 
     return f"""<h1>🏎 The Undercut Collective</h1>
 <div class="subtitle">Team Picks · Lineups, trades &amp; transfer analysis</div>
@@ -1990,6 +2272,14 @@ def panel_picks(data):
 </div>
 <div id="picks-team-display"></div>
 
+<div class="section-label">Transfers</div>
+<div class="hint" style="margin-bottom:12px">Which managers made moves between races. Wildcard and Limitless weekends are flagged.</div>
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+  <label style="font-size:13px">Into race</label>
+  <select id="tradeRaceSel">{trade_race_opts}</select>
+</div>
+<div id="picks-trades-display"></div>
+
 <div class="section-label">Driver &amp; constructor popularity</div>
 <div class="hint" style="margin-bottom:12px">How many managers picked each driver/constructor for the selected race, with their actual points. Updates with the race selector above.</div>
 <div class="pop-grid">
@@ -2003,21 +2293,13 @@ def panel_picks(data):
   </div>
 </div>
 
-<div class="section-label">Transfers</div>
-<div class="hint" style="margin-bottom:12px">Which managers made moves between races. Wildcard and Limitless weekends are flagged.</div>
-<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-  <label style="font-size:13px">Into race</label>
-  <select id="tradeRaceSel">{trade_race_opts}</select>
-</div>
-<div id="picks-trades-display"></div>
+{regret_html}
+{wins_html}
+{loyalty_html}
 
 <div class="section-label">DRS performance</div>
 <div class="hint" style="margin-bottom:12px">Each manager's DRS pick results race by race. Extra DRS chip races show both picks separately. Hit rate = % of DRS picks that scored positive.</div>
 <div id="picks-drs-display"></div>
-
-{regret_html}
-{wins_html}
-{loyalty_html}
 <script>
 (function(){{
 const teamsByRace={js(teams_by_race)};
@@ -2098,16 +2380,18 @@ function renderTrades(rname){{
   const cards=entries.map(e=>{{
     const wcBadge=e.wildcard
       ?`<span class="chip-pill" style="background:#4a1a12;color:#ff7a5a;margin-left:6px">Wildcard</span>`:'';
-    const rows=e.trades.map(t=>{{
-      const outHtml=t.out?`<span class="trade-out">\u2716 ${{t.out}}</span>`:`<span style="color:#333">\u2014</span>`;
-      const inHtml =t.in ?`<span class="trade-in">\u2714 ${{t.in}}</span>` :`<span style="color:#333">\u2014</span>`;
-      const type=t.isCon?`<span class="trade-type">CON</span>`:`<span class="trade-type">DRV</span>`;
-      return `<div class="trade-row">${{type}}${{outHtml}}<span class="trade-arrow">\u2192</span>${{inHtml}}</div>`;
-    }}).join('');
-    const noTrades=!e.trades.length
+    const chip=(p,cls,mark)=>`<span class="${{cls}}">${{mark}} ${{p.name}}<span class="trade-type">${{p.isCon?'CON':'DRV'}}</span></span>`;
+    const hasTrade=e.outs.length||e.ins.length;
+    const rows=hasTrade
+      ?`<div class="trade-row">
+          <div class="trade-row-group">${{e.outs.map(p=>chip(p,'trade-out','\u2716')).join('')}}</div>
+          <div class="trade-row-group">${{e.ins.map(p=>chip(p,'trade-in','\u2714')).join('')}}</div>
+        </div>`
+      :'';
+    const noTrades=!hasTrade
       ?`<div style="font-size:12px;color:#555;margin-top:6px">No changes detected</div>`:'';
     return `<div class="trade-card">
-      <div class="team-header" style="margin-bottom:${{e.trades.length?'10px':'4px'}}">
+      <div class="team-header" style="margin-bottom:${{hasTrade?'10px':'4px'}}">
         <div class="team-dot" style="background:${{e.color}}"></div>
         <div style="flex:1"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:2px"><span class="team-name">${{e.name}}</span>${{wcBadge}}</div><div class="team-sub">${{e.tradeCount}} transfer${{e.tradeCount!==1?'s':''}}</div></div>
       </div>
@@ -2327,9 +2611,10 @@ SHARED_CSS = """
   /* trades */
   .trade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 10px; }
   .trade-card { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 12px 14px; }
-  .trade-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; flex-wrap: wrap; }
-  .trade-type { font-size: 9px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: .04em; width: 28px; flex-shrink: 0; }
-  .trade-out { color: #f44336; text-decoration: line-through; }
+  .trade-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 4px 0; font-size: 12px; }
+  .trade-row-group { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .trade-type { font-size: 9px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: .04em; margin-left: 5px; }
+  .trade-out { color: #f44336; }
   .trade-in { color: #4caf50; }
   .trade-arrow { color: #444; flex-shrink: 0; }
   /* DRS performance */
@@ -2341,19 +2626,10 @@ SHARED_CSS = """
   .drs-pick-name { font-weight: 500; }
   .drs-pts { text-align: right; font-weight: 500; }
   /* regrets */
-  .regret-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 10px; margin-bottom: 1rem; }
-  .regret-card { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 12px 14px; }
-  .regret-swap { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
-  .regret-asset { flex: 1; background: #111; border-radius: 6px; padding: 7px 9px; min-width: 0; }
-  .regret-out { border: 0.5px solid #4caf5044; }
-  .regret-in  { border: 0.5px solid #f4433644; }
-  .regret-asset-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px; }
-  .regret-asset-pts { font-size: 13px; font-weight: 600; }
-  .regret-asset-bud { font-size: 11px; margin-top: 2px; opacity: 0.85; }
-  .regret-arrow { display: flex; align-items: center; color: #444; font-size: 14px; flex-shrink: 0; }
-  .regret-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
-  .regret-margin { font-size: 11px; color: #f44336; font-weight: 500; }
-  .regret-score { font-size: 10px; color: #555; }
+  .regret-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; margin-bottom: 1rem; }
+  .regret-table th { text-align: left; font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: .04em; padding: 6px 10px; border-bottom: 0.5px solid #2a2a2a; white-space: nowrap; }
+  .regret-table td { padding: 8px 10px; border-bottom: 0.5px solid #2a2a2a; vertical-align: top; }
+  .regret-table tr:last-child td { border-bottom: none; }
   /* loyalty */
   .loyalty-item { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-bottom: 0.5px solid #2a2a2a; font-size: 13px; }
   .loyalty-item:last-child { border-bottom: none; }
@@ -2430,7 +2706,7 @@ def build_html(data):
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">{SEASON} Season · {nd}/{nt} races · Last: {last} · Updated {updated_str}</span>
+      <span class="header-badge">{SEASON} Season · {nd}/{nt} races · Updated {updated_str}</span>
     </div>
     <nav class="tab-nav">
 {tab_buttons}    </nav>
@@ -2504,7 +2780,7 @@ def main():
     print("  The Undercut Collective -- Dashboard Builder")
     print("=" * 55)
 
-    raw  = read_workbook(WORKBOOK_PATH)
+    raw  = read_database(DB_PATH)
     data = compute(raw)
 
     nd   = data["n_done"]
@@ -2524,7 +2800,7 @@ def main():
 
     print()
     print("All done! Your friends can view the site at your GitHub Pages URL.")
-    input("Press Enter to close...")
+    pause("Press Enter to close...")
 
 
 if __name__ == "__main__":
