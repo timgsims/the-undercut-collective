@@ -228,6 +228,7 @@ def read_database(db_path, season=None):
     points_by_round_player = {}
     bud_by_round_player = {}
     value_by_round_player = {}
+    raw_value_by_round_player = {}   # unshifted — fallback for the latest round, see below
     latest_overall_points = {}   # player_id -> overall_points as of the highest round seen
     latest_value          = {}   # player_id -> absolute price as of the highest round seen
     latest_overall_round  = {}   # player_id -> that round, to track "latest"
@@ -244,6 +245,7 @@ def read_database(db_path, season=None):
         # the same start-of-gameday-N timing, so it gets the same shift.
         bud_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value_change"]
         value_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value"]
+        raw_value_by_round_player.setdefault(rr["round"], {})[rr["player_id"]] = rr["value"]
 
         if rr["round"] > latest_overall_round.get(rr["player_id"], -1):
             latest_overall_round[rr["player_id"]] = rr["round"]
@@ -289,6 +291,7 @@ def read_database(db_path, season=None):
             captain_id = captain_by_round_manager.get((round_no, mid))
             round_points = points_by_round_player.get(round_no, {})
             round_value = value_by_round_player.get(round_no, {})
+            round_value_raw = raw_value_by_round_player.get(round_no, {})
             round_session_points = session_points_by_round_player.get(round_no, {})
             picks = []
             race_session_totals = {}
@@ -298,13 +301,20 @@ def read_database(db_path, season=None):
                 is_drs = (pid == captain_id)
                 base_pts = round_points.get(pid)
                 pts = base_pts * 2 if (is_drs and base_pts is not None) else base_pts
+                # Fall back to this round's own (lagged) figure when there's no
+                # next round yet to peek at — same reasoning as the team-level
+                # budget fallback: mid-way through the season's most recent
+                # race, the lagged value simply doesn't exist yet.
+                pick_value = round_value.get(pid)
+                if pick_value is None:
+                    pick_value = round_value_raw.get(pid)
                 picks.append({
                     "name":           pname or f"Unknown #{pid}",
                     "drs":            is_drs,
                     "drs_marker":     "2X" if is_drs else "",
                     "pts":            pts,
                     "is_constructor": ptype == "constructor",
-                    "value":          round_value.get(pid),
+                    "value":          pick_value,
                 })
                 for stype, spts in round_session_points.get(pid, {}).items():
                     if spts is None or not stype:
@@ -1033,7 +1043,7 @@ def panel_race_breakdown(data):
     by_name = {m["name"]: m for m in M}
 
     race_cards_html = ""
-    for race in RD:
+    for race in reversed(RD):
         rname = race["name"]
         rnd   = race["round"]
         is_final = race.get("is_final", False)
@@ -1162,8 +1172,6 @@ weekendSel.addEventListener('change',function(){{renderWeekendSummary(this.value
 renderWeekendSummary(weekendSel.value);
 }})();
 </script>
-<div class="section-label">Round by round</div>
-{race_cards_html}
 <div class="section-label">Points per race — all managers</div>
 <div style="position:relative;height:300px">
   <div id="barChartYAxis" style="position:absolute;top:0;left:0;width:48px;height:100%;z-index:2;background:#0f0f0f;pointer-events:none"></div>
@@ -1221,7 +1229,9 @@ chart.options.animation={{onComplete:freezeYAxis}};
 chart.update();
 document.getElementById('legend-race').innerHTML={js(legend_html)};
 }})();
-</script>"""
+</script>
+<div class="section-label">Round by round</div>
+{race_cards_html}"""
 
 
 # ── 03 Head-to-Head ───────────────────────────────────────────────────────────
