@@ -607,9 +607,13 @@ def chip_pill(label, bg, tc, small=False, ml="4px"):
 def sprint_pill(small=False):
     size = "8px" if small else "9px"
     pad  = "1px 5px" if small else "1px 6px"
+    # vertical-align:middle wasn't enough — Chart.js/browser baseline math for
+    # a small badge next to much larger text still read as sitting a couple
+    # px low, so nudge it up directly rather than fight the metric-dependent
+    # "middle" calculation.
     return (f'<span style="background:#f0f0f0;color:#222;font-weight:600;'
             f'border-radius:4px;font-size:{size};padding:{pad};margin-left:5px;'
-            f'letter-spacing:.03em;vertical-align:middle;display:inline-block">SPRINT</span>')
+            f'letter-spacing:.03em;display:inline-block;position:relative;top:-2px">SPRINT</span>')
 
 
 def race_label(race, small=False):
@@ -1464,8 +1468,11 @@ def panel_podiums(data):
             if chip and chip in CHIP_STYLES:
                 # ml="0" — this pill sits on its own line under the name (not
                 # inline next to it), so it needs to start flush left rather
-                # than carry the 4px "next to text" margin used elsewhere.
-                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="0")
+                # than carry the 4px "next to text" margin used elsewhere. A
+                # small negative value compensates for the pill's own left
+                # padding + rounded corners, which otherwise still reads as
+                # a slight indent versus the flush-left name/pts text.
+                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="-2px")
         return ""
 
     cards_html = ""
@@ -1481,7 +1488,7 @@ def panel_podiums(data):
                     pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
                     pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
                     pill = get_chip_pill(name, pod["race"])
-                    pill_html = f'<div style="margin-top:2px">{pill}</div>' if pill else ""
+                    pill_html = f'<div style="margin-top:1px">{pill}</div>' if pill else ""
                     names_html += (f'<div><div class="slot-name" style="color:{get_color(name)}">'
                                    f'{name}</div>{pill_html}{pts_html}</div>')
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
@@ -1616,12 +1623,11 @@ def panel_stats(data):
          hl_row("—", ["Worst luck", "No inactive-driver penalties yet"]))
     )
 
-    # Name column trimmed ~25% (was minmax(70px,1fr), effectively ~100px in
-    # a 420px-wide row) — manager names here are all short, so a fixed 55px
-    # is plenty and gets the whole table closer to fitting on a phone screen
-    # without scrolling.
-    fin_grid = f"26px 55px repeat({N_FIN},26px) 36px"
-    fin_min_w = 26 + 55 + 26 * N_FIN + 36 + 5 * (N_FIN + 3)
+    # Name column trimmed from the original ~100px (minmax(70px,1fr) in a
+    # 420px row) — manager names here are all short, so a fixed width is
+    # plenty and gets the whole table closer to fitting on a phone screen.
+    fin_grid = f"26px 62px repeat({N_FIN},26px) 36px"
+    fin_min_w = 26 + 62 + 26 * N_FIN + 36 + 5 * (N_FIN + 3)
 
     return f"""<div class="subtitle">Stats · Season overview &amp; highlights</div>
 <style>.srow{{display:grid;grid-template-columns:{fin_grid};align-items:center;gap:5px;padding:7px 0;border-bottom:0.5px solid #2a2a2a;min-width:{fin_min_w}px}}</style>
@@ -1632,7 +1638,7 @@ def panel_stats(data):
   <div class="mc"><div class="mc-val">{swing_m['name']}</div><div class="mc-lbl">Biggest swing ({swing_val} places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
-<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+<div class="card" style="padding:4px 8px;overflow-x:auto;-webkit-overflow-scrolling:touch">
   <div style="display:grid;grid-template-columns:{fin_grid};gap:5px;padding:6px 0 2px;min-width:{fin_min_w}px">
     <div></div><div></div>{pos_headers}<div style="font-size:9px;color:#555;text-align:right">Pts</div>
   </div>
@@ -1728,7 +1734,7 @@ def panel_positions(data):
 <div style="position:relative;height:360px">
   <div id="posChartYAxis" style="position:absolute;top:0;left:0;width:36px;height:100%;z-index:2;background:#0f0f0f;pointer-events:none"></div>
   <div id="posChartScroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;height:100%;padding-left:36px;box-sizing:border-box">
-    <div style="position:relative;height:100%;min-width:{max(len(race_labels) * 60, 400)}px">
+    <div style="position:relative;height:100%;min-width:{max(len(race_labels) * 46, 380)}px">
       <canvas id="posChart"></canvas>
     </div>
   </div>
@@ -2269,7 +2275,10 @@ def panel_picks(data):
   <button type="button" class="toggle-btn" data-metric="bud">Budget impact</button>
 </div>
 <div class="card" style="padding:12px 16px">
-  <div id="impactOverviewChartWrap" style="position:relative"><canvas id="impactOverviewChart"></canvas></div>
+  <div id="impactOverviewChartWrap" style="position:relative">
+    <div id="impactOverviewLabels" style="position:absolute;top:0;left:0;width:118px;height:100%;pointer-events:none"></div>
+    <canvas id="impactOverviewChart"></canvas>
+  </div>
 </div>
 
 <div class="section-label">Transfer impact per race</div>
@@ -2415,8 +2424,11 @@ tradeRaceSel.addEventListener('change', function(){{ renderTrades(this.value); }
 
 /* ── Transfer impact ── */
 let impactOverviewChart=null;
+function roundUpToStep(v, step){{ return Math.max(step, Math.ceil((v*1.05)/step)*step); }}
+
 function renderImpactOverview(metric){{
   const wrap=document.getElementById('impactOverviewChartWrap');
+  const labelsEl=document.getElementById('impactOverviewLabels');
   const rows=impactOverview.map(m=>({{
     name: m.name, color: m.color,
     net:  metric==='pts'?m.netPts:m.netBud,
@@ -2424,21 +2436,32 @@ function renderImpactOverview(metric){{
     bad:  metric==='pts'?m.badPts:m.badBud,
   }}));
   wrap.style.height=Math.max(140, rows.length*44)+'px';
-  const labels=rows.map(r=>`${{r.name}}  (${{r.good}}W-${{r.bad}}L)`);
   const values=rows.map(r=>r.net);
   const colors=values.map(v=>v>0?'#4caf50':v<0?'#f44336':'#555');
-  const bound=Math.max(1, ...values.map(v=>Math.abs(v)))*1.15;
+  const step=metric==='pts'?50:2;
+  const bound=roundUpToStep(Math.max(1, ...values.map(v=>Math.abs(v))), step);
   const unit=metric==='pts'?' pts':'m';
   if(impactOverviewChart)impactOverviewChart.destroy();
   impactOverviewChart=new Chart(document.getElementById('impactOverviewChart'),{{
     type:'bar',
-    data:{{labels:labels,datasets:[{{data:values,backgroundColor:colors,borderRadius:3,barThickness:18}}]}},
+    data:{{labels:rows.map(()=>''),datasets:[{{data:values,backgroundColor:colors,borderRadius:3,barThickness:18}}]}},
     options:{{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.parsed.x>=0?'+':''}}${{ctx.parsed.x}}${{unit}}`}}}}}},
+      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{
+        title:ctx=>rows[ctx[0].dataIndex].name,
+        label:ctx=>` ${{ctx.parsed.x>=0?'+':''}}${{ctx.parsed.x}}${{unit}}`
+      }}}}}},
       scales:{{
-        x:{{min:-bound,max:bound,ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
-        y:{{ticks:{{color:'#ccc',font:{{size:12}}}},grid:{{display:false}}}}
+        x:{{min:-bound,max:bound,ticks:{{stepSize:step,color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+        y:{{afterFit:s=>{{s.width=118;}},ticks:{{display:false}},grid:{{display:false}},border:{{display:false}}}}
+      }},
+      animation:{{onComplete:()=>{{
+        const ys=impactOverviewChart.scales.y;
+        labelsEl.innerHTML=rows.map((r,i)=>{{
+          const yPx=ys.getPixelForTick(i);
+          return `<div style="position:absolute;left:0;top:${{yPx}}px;transform:translateY(-50%);font-size:12px;color:#ccc;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis">${{r.name}} <span style="color:#4caf50">${{r.good}}✔</span><span style="color:#f44336;margin-left:3px">${{r.bad}}✖</span></div>`;
+        }}).join('');
       }}}}
+    }}
   }});
 }}
 
@@ -2460,7 +2483,8 @@ function renderImpactPerRace(managerName, metric){{
   const labels=trades.map(t=>t.nextRace);
   const values=trades.map(t=>metric==='pts'?t.ptsMargin:t.budMargin);
   const colors=values.map(v=>v>0?'#4caf50':v<0?'#f44336':'#555');
-  const bound=Math.max(1, ...values.map(v=>Math.abs(v)))*1.15;
+  const step=metric==='pts'?50:0.5;
+  const bound=roundUpToStep(Math.max(1, ...values.map(v=>Math.abs(v))), step);
   const unit=metric==='pts'?' pts':'m';
   if(impactPerRaceChart)impactPerRaceChart.destroy();
   impactPerRaceChart=new Chart(canvas,{{
@@ -2475,7 +2499,7 @@ function renderImpactPerRace(managerName, metric){{
         }}
       }}}}}},
       scales:{{
-        x:{{min:-bound,max:bound,ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+        x:{{min:-bound,max:bound,ticks:{{stepSize:step,color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
         y:{{ticks:{{color:'#ccc',font:{{size:12}}}},grid:{{display:false}}}}
       }}}}
   }});
