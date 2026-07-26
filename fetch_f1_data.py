@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS player_results (
     gameday_points REAL,
     overall_points REAL,
     value_change REAL,
+    value REAL,
     PRIMARY KEY (season, round, player_id)
 );
 CREATE TABLE IF NOT EXISTS session_status (
@@ -352,10 +353,11 @@ def fetch_and_store_drivers(conn, round_no, cookie):
 
             conn.execute(
                 "INSERT INTO player_results (season, round, player_id, gameday_points, overall_points, "
-                "value_change) VALUES (?,?,?,?,?,?) ON CONFLICT(season, round, player_id) DO UPDATE SET "
+                "value_change, value) VALUES (?,?,?,?,?,?,?) ON CONFLICT(season, round, player_id) DO UPDATE SET "
                 "gameday_points=excluded.gameday_points, overall_points=excluded.overall_points, "
-                "value_change=excluded.value_change",
-                (SEASON, round_no, pid, to_float(p.get("GamedayPoints")), to_float(p.get("OverallPpints")), value_change),
+                "value_change=excluded.value_change, value=excluded.value",
+                (SEASON, round_no, pid, to_float(p.get("GamedayPoints")), to_float(p.get("OverallPpints")),
+                 value_change, value),
             )
 
             for sess in p.get("SessionWisePoints", []) or []:

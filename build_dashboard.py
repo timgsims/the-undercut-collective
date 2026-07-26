@@ -227,10 +227,12 @@ def read_database(db_path, season=None):
     # is applied per-manager below, not baked into this shared source value).
     points_by_round_player = {}
     bud_by_round_player = {}
+    value_by_round_player = {}
     latest_overall_points = {}   # player_id -> overall_points as of the highest round seen
+    latest_value          = {}   # player_id -> absolute price as of the highest round seen
     latest_overall_round  = {}   # player_id -> that round, to track "latest"
     for rr in conn.execute(
-        "SELECT round, player_id, gameday_points, value_change, overall_points "
+        "SELECT round, player_id, gameday_points, value_change, overall_points, value "
         "FROM player_results WHERE season=?", (season,)
     ):
         points_by_round_player.setdefault(rr["round"], {})[rr["player_id"]] = rr["gameday_points"]
@@ -238,12 +240,15 @@ def read_database(db_path, season=None):
         # feed reflects the price move CAUSED BY round N-1, not round N itself
         # (verified: round 11's sum of value_change == Tim's known round-10
         # team budget change, exactly). File it under round N-1 so it lines
-        # up with the race that actually caused it.
+        # up with the race that actually caused it — the absolute value has
+        # the same start-of-gameday-N timing, so it gets the same shift.
         bud_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value_change"]
+        value_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value"]
 
         if rr["round"] > latest_overall_round.get(rr["player_id"], -1):
             latest_overall_round[rr["player_id"]] = rr["round"]
             latest_overall_points[rr["player_id"]] = rr["overall_points"]
+            latest_value[rr["player_id"]] = rr["value"]
 
     # Season-to-date points per driver/constructor NAME, as of the most recent
     # round we have — used to sort Team Picks' transfer/trade lists by current
@@ -251,6 +256,13 @@ def read_database(db_path, season=None):
     data["player_season_points"] = {
         player_names.get(pid, (None, None))[0]: pts
         for pid, pts in latest_overall_points.items()
+        if player_names.get(pid, (None, None))[0]
+    }
+    # Same, but current absolute price rather than points — used to sort the
+    # Lineup Viewer by current value.
+    data["player_season_value"] = {
+        player_names.get(pid, (None, None))[0]: val
+        for pid, val in latest_value.items()
         if player_names.get(pid, (None, None))[0]
     }
 
@@ -276,6 +288,7 @@ def read_database(db_path, season=None):
                 continue
             captain_id = captain_by_round_manager.get((round_no, mid))
             round_points = points_by_round_player.get(round_no, {})
+            round_value = value_by_round_player.get(round_no, {})
             round_session_points = session_points_by_round_player.get(round_no, {})
             picks = []
             race_session_totals = {}
@@ -291,6 +304,7 @@ def read_database(db_path, season=None):
                     "drs_marker":     "2X" if is_drs else "",
                     "pts":            pts,
                     "is_constructor": ptype == "constructor",
+                    "value":          round_value.get(pid),
                 })
                 for stype, spts in round_session_points.get(pid, {}).items():
                     if spts is None or not stype:
@@ -925,11 +939,6 @@ def panel_leaderboard(data):
   {table_rows}
 </div>"""
 
-    # Latest podiums — 3 most recent races with a podium, newest first, same
-    # table format as Race Results on the Podiums page.
-    recent_pods = list(reversed([p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]))
-    pod_table_html = podium_table_html(recent_pods, M)
-
     # Standings rows
     medal_styles = [
         "background:#FFD700;color:#7a5800",
@@ -974,8 +983,6 @@ def panel_leaderboard(data):
   <div class="mc"><div class="mc-val">{gap_span}</div><div class="mc-lbl">Pts gap P1 to P{len(M)}</div></div>
 </div>
 {live_box}
-<div class="section-label">Latest podiums</div>
-{pod_table_html}
 <div class="section-label">Standings</div>
 <div class="card">{rows_html}</div>
 <div class="hint">Bar shows points as % of leader's total ({leader} pts)</div>
@@ -1818,6 +1825,7 @@ def panel_picks(data):
     drv_results = data.get("driver_results", {})       # {driver_name: {race_name: pts}}
     con_results = data.get("constructor_results", {})  # {con_name:    {race_name: pts}}
     season_pts  = data.get("player_season_points", {})
+    season_val  = data.get("player_season_value", {})
 
     def by_season_points(names):
         # Highest current season total first, not alphabetical.
@@ -1877,7 +1885,9 @@ def panel_picks(data):
                 "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
                 "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
                                "pts": p["pts"], "isCon": p["is_constructor"],
-                               "seasonPts": season_pts.get(p["name"]) or 0} for p in picks],
+                               "seasonPts": season_pts.get(p["name"]) or 0,
+                               "value": p.get("value"),
+                               "seasonValue": season_val.get(p["name"]) or 0} for p in picks],
             })
         # Sort by race points descending so top scorer shows first
         teams_by_race[rname].sort(key=lambda t: -t["racePts"])
@@ -2375,11 +2385,11 @@ function showTeam(rname, manName){{
   if(!t){{document.getElementById('picks-team-display').innerHTML='';return;}}
   const chipHtml=t.chip
     ?`<span class="chip-pill" style="background:${{t.chip.bg}};color:${{t.chip.tc}};margin-left:auto">${{t.chip.label}}</span>`:'';
-  // Sorted by current-season points (highest first), then arranged so the
-  // 2-column grid reads top-to-bottom within a column before moving to the
-  // next column, rather than the grid's default left-to-right/wrap order.
-  function bySeasonPts(list){{
-    return [...list].sort((a,b)=>(b.seasonPts||0)-(a.seasonPts||0));
+  // Sorted by current-season price value (highest first), then arranged so
+  // the 2-column grid reads top-to-bottom within a column before moving to
+  // the next column, rather than the grid's default left-to-right/wrap order.
+  function bySeasonValue(list){{
+    return [...list].sort((a,b)=>(b.seasonValue||0)-(a.seasonValue||0));
   }}
   function toColumnMajor(sorted, cols){{
     const rows=Math.ceil(sorted.length/cols)||1;
@@ -2392,28 +2402,38 @@ function showTeam(rname, manName){{
     }}
     return grid.filter(x=>x!==null);
   }}
-  const drivers=toColumnMajor(bySeasonPts(t.picks.filter(p=>!p.isCon)), 2);
-  const cons=toColumnMajor(bySeasonPts(t.picks.filter(p=>p.isCon)), 2);
+  const drivers=toColumnMajor(bySeasonValue(t.picks.filter(p=>!p.isCon)), 2);
+  const cons=toColumnMajor(bySeasonValue(t.picks.filter(p=>p.isCon)), 2);
   function pickCard(p){{
     const ptsTxt=p.pts!=null?(p.pts>=0?`+${{p.pts}}`:`${{p.pts}}`):'–';
     const ptsColor=p.pts==null?'#555':p.pts>0?'#4caf50':p.pts<0?'#f44336':'#888';
+    const valueTxt=p.value!=null?`${{p.value.toFixed(1)}}m`:'—';
     const drsStyle=p.drs?`border-color:${{t.color}};background:${{t.color}}18`:'';
     const drsLabel=p.drsMarker?`<span style="font-size:10px;font-weight:600;color:${{t.color}};margin-left:4px">${{p.drsMarker}}</span>`:'';
     return `<div class="pick" style="${{drsStyle}}">
       <div class="pick-label">${{p.drs?'<span style="color:'+t.color+'">⚡ DRS</span>':p.isCon?'Constructor':'Driver'}}</div>
       <div class="pick-name">${{p.name}}${{drsLabel}}</div>
-      <div class="pick-pts" style="color:${{ptsColor}}">${{ptsTxt}} pts</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">
+        <span class="pick-pts" style="color:${{ptsColor}};margin-top:0">${{ptsTxt}} pts</span>
+        <span style="font-size:11px;color:#888">${{valueTxt}}</span>
+      </div>
     </div>`;
   }}
   const totalPts=t.racePts;
   const totalTxt=totalPts>=0?`+${{totalPts}}`:`${{totalPts}}`;
   const totalColor=totalPts>0?'#4caf50':totalPts<0?'#f44336':'#888';
+  const totalValue=t.picks.reduce((sum,p)=>sum+(p.value||0),0);
+  const totalValueTxt=totalValue>0?`${{totalValue.toFixed(1)}}m`:'—';
   document.getElementById('picks-team-display').innerHTML=`
   <div class="team-card" style="margin-bottom:1rem">
     <div class="team-header">
       <div class="team-dot" style="background:${{t.color}}"></div>
       <div><div class="team-name">${{t.name}}</div><div class="team-sub">${{t.teamName}}</div></div>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-size:13px;font-weight:500">${{totalValueTxt}}</div>
+        <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.04em">Team value</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:12px">
         ${{chipHtml}}
         <div style="font-size:18px;font-weight:600;color:${{totalColor}}">${{totalTxt}} pts</div>
       </div>
@@ -2704,7 +2724,7 @@ SHARED_CSS = """
   .race-title { font-size: 15px; font-weight: 500; }
   .race-round { font-size: 11px; color: #888; }
   .podium-strip { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 12px; }
-  .slot { border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .slot { border-radius: 8px; padding: 6px 8px; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .medal { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; flex-shrink: 0; }
   .slot-name { font-size: 13px; font-weight: 500; }
   .slot-pts { font-size: 11px; color: #888; }
