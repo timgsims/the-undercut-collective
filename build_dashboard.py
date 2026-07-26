@@ -597,11 +597,11 @@ def js(v):
     if isinstance(v, dict): return "{" + ",".join(f'"{k}":{js(vv)}' for k, vv in v.items()) + "}"
     return str(v)
 
-def chip_pill(label, bg, tc, small=False):
+def chip_pill(label, bg, tc, small=False, ml="4px"):
     size = "9px" if small else "10px"
     pad  = "1px 5px" if small else "1px 7px"
     return (f'<span class="chip-pill" style="background:{bg};color:{tc};'
-            f'font-size:{size};padding:{pad}">{label}</span>')
+            f'font-size:{size};padding:{pad};margin-left:{ml};white-space:nowrap">{label}</span>')
 
 
 def sprint_pill(small=False):
@@ -609,7 +609,7 @@ def sprint_pill(small=False):
     pad  = "1px 5px" if small else "1px 6px"
     return (f'<span style="background:#f0f0f0;color:#222;font-weight:600;'
             f'border-radius:4px;font-size:{size};padding:{pad};margin-left:5px;'
-            f'letter-spacing:.03em">SPRINT</span>')
+            f'letter-spacing:.03em;vertical-align:middle;display:inline-block">SPRINT</span>')
 
 
 def race_label(race, small=False):
@@ -836,34 +836,31 @@ def panel_leaderboard(data):
   {table_rows}
 </div>"""
 
-    # Latest podiums line
-    medal_pill_styles = [
-        "background:#2a2200;border:1px solid #FFD700;color:#FFD700",
-        "background:#1e1e1e;border:1px solid #C0C0C0;color:#C0C0C0",
-        "background:#221a12;border:1px solid #CD7F32;color:#CD7F32",
-    ]
-    medal_labels = ["1st", "2nd", "3rd"]
-    pod_cards = ""
+    # Latest podiums table — 3 most recent races with a podium, newest first
+    def pod_slot_cell(names_in_slot):
+        if not names_in_slot:
+            return '<span style="color:#555">—</span>'
+        return ", ".join(
+            f'<span style="color:{MANAGER_COLOURS.get(name, "#888")};font-weight:500">{name}</span>'
+            for name in names_in_slot
+        )
+
+    pod_rows = ""
     for pod in reversed([p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]):
-        slot_lists = [pod["first"], pod["second"], pod["third"]]
-        if any(slot_lists):
-            slots_html = ""
-            for idx, names_in_slot in enumerate(slot_lists):
-                for name in names_in_slot:
-                    mgr_color = MANAGER_COLOURS.get(name, "#888")
-                    slots_html += (
-                        f'<span style="display:inline-flex;align-items:center;gap:5px;'
-                        f'{medal_pill_styles[idx]};border-radius:5px;padding:2px 7px;font-size:11px;font-weight:500;white-space:nowrap">'
-                        f'<span style="font-size:10px;color:inherit;opacity:0.75">{medal_labels[idx]}</span>'
-                        f'<span style="color:{mgr_color}">{name}</span>'
-                        f'</span>'
-                    )
-            pod_cards += (
-                f'<div class="podium-card">'
-                f'<div class="podium-pos">{pod["race"]}{sprint_pill(small=True) if pod.get("is_sprint") else ""}</div>'
-                f'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">{slots_html}</div>'
-                f'</div>'
-            )
+        pod_rows += f"""<tr>
+  <td style="white-space:nowrap;color:#888">{pod['race']}{sprint_pill(small=True) if pod.get('is_sprint') else ''}</td>
+  <td>{pod_slot_cell(pod['first'])}</td>
+  <td>{pod_slot_cell(pod['second'])}</td>
+  <td>{pod_slot_cell(pod['third'])}</td>
+</tr>"""
+    pod_table_html = f"""<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+<table class="regret-table" style="min-width:0">
+  <thead><tr>
+    <th>Race</th><th style="color:#FFD700">1st</th><th style="color:#C0C0C0">2nd</th><th style="color:#CD7F32">3rd</th>
+  </tr></thead>
+  <tbody>{pod_rows}</tbody>
+</table>
+</div>"""
 
     # Standings rows
     medal_styles = [
@@ -901,8 +898,7 @@ def panel_leaderboard(data):
         f'<span><span style="width:10px;height:10px;border-radius:2px;background:{m["color"]};display:inline-block"></span>{m["name"]}</span>'
         for m in M)
 
-    html = f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">F1 Fantasy League — Season Leaderboard · {ND} of {NT} races complete</div>
+    html = f"""<div class="subtitle">F1 Fantasy League — Season Leaderboard · {ND} of {NT} races complete</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{ND}</div><div class="mc-lbl">Races complete</div></div>
   <div class="mc"><div class="mc-val">{NT - ND}</div><div class="mc-lbl">Races remaining</div></div>
@@ -911,7 +907,7 @@ def panel_leaderboard(data):
 </div>
 {live_box}
 <div class="section-label">Latest podiums</div>
-<div class="podium-row">{pod_cards}</div>
+{pod_table_html}
 <div class="section-label">Standings</div>
 <div class="card">{rows_html}</div>
 <div class="hint">Bar shows points as % of leader's total ({leader} pts)</div>
@@ -1042,8 +1038,7 @@ def panel_race_breakdown(data):
         for r in RD
     )
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Race Breakdown · {ND} of {NT} races complete</div>
+    return f"""<div class="subtitle">Race Breakdown · {ND} of {NT} races complete</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{ND}</div><div class="mc-lbl">Races complete</div></div>
   <div class="mc"><div class="mc-val">{high}</div><div class="mc-lbl">Highest single race ({high_m})</div></div>
@@ -1196,8 +1191,7 @@ def panel_h2h(data):
                    for c in CHIP_ORDER])
     race_names_js = js([r["name"] for r in RD])
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Head-to-Head Comparison</div>
+    return f"""<div class="subtitle">Head-to-Head Comparison</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap">
   <div style="display:flex;align-items:center;gap:8px"><label>Manager A</label><select id="selA" onchange="ucH2HSync('A')"></select></div>
   <div style="font-size:13px;color:#888;font-weight:500">vs</div>
@@ -1405,8 +1399,7 @@ def panel_budget(data):
     y_min = max(80, y_min)   # never go below 80m
     y_max = min(120, y_max)  # never go above 120m
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Budget Tracker · Team values across the season</div>
+    return f"""<div class="subtitle">Budget Tracker · Team values across the season</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{max_b:.1f}m</div><div class="mc-lbl">Highest budget ({sorted_m[0]['name']})</div></div>
   <div class="mc"><div class="mc-val">{min_b:.1f}m</div><div class="mc-lbl">Lowest budget ({sorted_m[-1]['name']})</div></div>
@@ -1469,7 +1462,10 @@ def panel_podiums(data):
         if m:
             chip = m["chip_by_race"].get(race_name)
             if chip and chip in CHIP_STYLES:
-                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True)
+                # ml="0" — this pill sits on its own line under the name (not
+                # inline next to it), so it needs to start flush left rather
+                # than carry the 4px "next to text" margin used elsewhere.
+                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="0")
         return ""
 
     cards_html = ""
@@ -1484,11 +1480,13 @@ def panel_podiums(data):
                 for name in names_in_slot:
                     pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
                     pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
+                    pill = get_chip_pill(name, pod["race"])
+                    pill_html = f'<div style="margin-top:2px">{pill}</div>' if pill else ""
                     names_html += (f'<div><div class="slot-name" style="color:{get_color(name)}">'
-                                   f'{name}{get_chip_pill(name, pod["race"])}</div>{pts_html}</div>')
+                                   f'{name}</div>{pill_html}{pts_html}</div>')
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
                           f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
-                          f'<div style="display:flex;flex-direction:column;gap:2px">{names_html}</div></div>')
+                          f'<div style="display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden">{names_html}</div></div>')
             else:
                 slots += (f'<div class="slot" style="{slot_styles[j]}">'
                           f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
@@ -1525,8 +1523,7 @@ def panel_podiums(data):
   <div style="font-size:12px;color:#888;min-width:20px;text-align:right;flex-shrink:0">{total}</div>
 </div>"""
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Podiums · Race results &amp; podium share</div>
+    return f"""<div class="subtitle">Podiums · Race results &amp; podium share</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{ND}</div><div class="mc-lbl">Races complete</div></div>
   <div class="mc"><div class="mc-val">{managers_with_pod}</div><div class="mc-lbl">Managers with a podium</div></div>
@@ -1619,11 +1616,15 @@ def panel_stats(data):
          hl_row("—", ["Worst luck", "No inactive-driver penalties yet"]))
     )
 
-    fin_grid = f"26px minmax(70px,1fr) repeat({N_FIN},26px) 36px"
+    # Name column trimmed ~25% (was minmax(70px,1fr), effectively ~100px in
+    # a 420px-wide row) — manager names here are all short, so a fixed 55px
+    # is plenty and gets the whole table closer to fitting on a phone screen
+    # without scrolling.
+    fin_grid = f"26px 55px repeat({N_FIN},26px) 36px"
+    fin_min_w = 26 + 55 + 26 * N_FIN + 36 + 5 * (N_FIN + 3)
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Stats · Season overview &amp; highlights</div>
-<style>.srow{{display:grid;grid-template-columns:{fin_grid};align-items:center;gap:5px;padding:7px 0;border-bottom:0.5px solid #2a2a2a;min-width:420px}}</style>
+    return f"""<div class="subtitle">Stats · Season overview &amp; highlights</div>
+<style>.srow{{display:grid;grid-template-columns:{fin_grid};align-items:center;gap:5px;padding:7px 0;border-bottom:0.5px solid #2a2a2a;min-width:{fin_min_w}px}}</style>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{total_race_scores}</div><div class="mc-lbl">Races scored so far</div></div>
   <div class="mc"><div class="mc-val">{chips_used_count}</div><div class="mc-lbl">Chips used league-wide</div></div>
@@ -1632,7 +1633,7 @@ def panel_stats(data):
 </div>
 <div class="section-label">Finish distribution</div>
 <div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
-  <div style="display:grid;grid-template-columns:{fin_grid};gap:5px;padding:6px 0 2px;min-width:420px">
+  <div style="display:grid;grid-template-columns:{fin_grid};gap:5px;padding:6px 0 2px;min-width:{fin_min_w}px">
     <div></div><div></div>{pos_headers}<div style="font-size:9px;color:#555;text-align:right">Pts</div>
   </div>
   {finish_rows_html}
@@ -1650,7 +1651,7 @@ def panel_positions(data):
     ND  = data["n_done"]
 
     if ND == 0:
-        return "<h1>🏎 The Undercut Collective</h1><div class='subtitle'>Position Changes · No races complete yet</div>"
+        return "<div class='subtitle'>Position Changes · No races complete yet</div>"
 
     # Most gained / lost in a SINGLE race (not overall)
     best_single  = ("—", 0, "—")   # (manager, gain, race_name)
@@ -1685,85 +1686,6 @@ def panel_positions(data):
 
     last_race_name = RD[-1]["name"] if RD else "—"
 
-    # ── Standings movement table — clean card per manager ───────────────────
-    # "Current" position = the last non-None entry, not literally the last
-    # array slot — a live/not-yet-final race correctly leaves its own slot as
-    # None (see compute()), which would otherwise make every manager look
-    # position-less the moment any race is in progress.
-    def last_known_position(m):
-        for p in reversed(m["positions"]):
-            if p is not None:
-                return p
-        return None
-
-    sorted_cur = sorted(M, key=lambda m: (last_known_position(m) if last_known_position(m) is not None else 99))
-
-    # Header row: race name + round number above each badge column
-    # Use first word of race name as abbreviation to keep it compact
-    def short_race(name):
-        # Use up to first 7 chars of first word, handles "Australia", "China", "Great Britain" → "Great"
-        return name.split()[0][:7]
-
-    header_badges = "".join(
-        f'<div style="display:flex;flex-direction:column;align-items:center;gap:1px;width:28px;flex-shrink:0">'
-        f'<div style="font-size:8px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34px;text-align:center">{short_race(race["name"])}</div>'
-        f'<div style="font-size:9px;color:#444">R{race["round"]}</div>'
-        f'</div>'
-        for race in RD
-    )
-    min_row_w = 80 + 34 * len(RD) + 80
-    header_row = (
-        f'<div style="display:flex;align-items:flex-end;gap:12px;padding:6px 0 4px;border-bottom:0.5px solid #2a2a2a">'
-        f'<div style="width:10px;flex-shrink:0"></div>'
-        f'<div style="min-width:60px;flex-shrink:0"></div>'
-        f'<div style="display:flex;gap:6px;flex:1">{header_badges}</div>'
-        f'<div style="min-width:52px;text-align:right;flex-shrink:0;font-size:9px;color:#555;font-weight:500;text-transform:uppercase;letter-spacing:.04em">Last race</div>'
-        f'</div>'
-    )
-
-    rows_html = ""
-    for m in sorted_cur:
-        non_none_idx = [i for i, p in enumerate(m["positions"]) if p is not None]
-        if not non_none_idx:
-            continue
-        cur_idx = non_none_idx[-1]
-        pos_cur = m["positions"][cur_idx]
-        # Net = change since previous race (last two non-None positions)
-        if len(non_none_idx) >= 2:
-            net = m["positions"][non_none_idx[-2]] - pos_cur   # positive = moved up
-        else:
-            net = 0
-
-        # Net movement badge
-        if net > 0:
-            net_html = f'<span style="color:#1D9E75;font-size:13px;font-weight:600">▲ +{net}</span>'
-        elif net < 0:
-            net_html = f'<span style="color:#E24B4A;font-size:13px;font-weight:600">▼ {net}</span>'
-        else:
-            net_html = '<span style="color:#555;font-size:13px;font-weight:500">— 0</span>'
-
-        # Race-by-race position badges (all races, skip Nones)
-        race_badges = ""
-        for ri, (race, pos) in enumerate(zip(RD, m["positions"])):
-            if pos is None:
-                continue
-            is_cur = (ri == cur_idx)
-            bg = m["color"] if is_cur else "#1e1e1e"
-            tc = "#0f0f0f" if is_cur else m["color"]
-            race_badges += (
-                f'<div style="display:flex;flex-direction:column;align-items:center;gap:2px">'
-                f'<div style="width:28px;height:28px;border-radius:6px;background:{bg};border:1.5px solid {m["color"]};'
-                f'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:{tc}">P{pos}</div>'
-                f'</div>'
-            )
-
-        rows_html += f"""<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
-  <div style="width:10px;height:10px;border-radius:50%;background:{m['color']};flex-shrink:0"></div>
-  <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">{m['name']}</div>
-  <div style="display:flex;gap:6px;flex:1">{race_badges}</div>
-  <div style="min-width:52px;text-align:right;flex-shrink:0">{net_html}</div>
-</div>"""
-
     # ── Position timeline chart ───────────────────────────────────────────────
     race_labels = [r["name"] for r in RD]
     datasets = []
@@ -1794,41 +1716,72 @@ def panel_positions(data):
         for d in datasets
     ) + "]"
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Position Changes · How the standings have shifted</div>
+    return f"""<div class="subtitle">Position Changes · How the standings have shifted</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">+{best_single[1]}</div><div class="mc-lbl">Biggest single-race climb — {best_single[0]} ({best_single[2]})</div></div>
   <div class="mc"><div class="mc-val">{worst_single[1]}</div><div class="mc-lbl">Biggest single-race drop — {worst_single[0]} ({worst_single[2]})</div></div>
   <div class="mc"><div class="mc-val">{streak_best[1]} race{'s' if streak_best[1] != 1 else ''}</div><div class="mc-lbl">Longest position streak — {streak_best[0]}</div></div>
   <div class="mc"><div class="mc-val">{last_race_name}</div><div class="mc-lbl">Most recent race</div></div>
 </div>
-<div class="section-label">Standings movement</div>
-<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
-  <div style="min-width:{min_row_w}px">
-  {header_row}
-  {rows_html}
-  <div style="border-bottom:none;padding-bottom:4px"></div>
+<div class="hint" style="margin-bottom:1.5rem">Numbers show overall standings after each race.</div>
+<div class="section-label">Position timeline</div>
+<div style="position:relative;height:360px">
+  <div id="posChartYAxis" style="position:absolute;top:0;left:0;width:36px;height:100%;z-index:2;background:#0f0f0f;pointer-events:none"></div>
+  <div id="posChartScroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;height:100%;padding-left:36px;box-sizing:border-box">
+    <div style="position:relative;height:100%;min-width:{max(len(race_labels) * 60, 400)}px">
+      <canvas id="posChart"></canvas>
+    </div>
   </div>
 </div>
-<div class="hint" style="margin-bottom:1.5rem">Filled badge = current position. Numbers show overall standings after each race.</div>
-<div class="section-label">Position timeline</div>
-<div style="position:relative;height:360px"><canvas id="posChart"></canvas></div>
 <div class="legend" id="legend-positions"></div>
 <script>
 (function(){{
-new Chart(document.getElementById('posChart'),{{
+const posChart=new Chart(document.getElementById('posChart'),{{
   type:'line',
   data:{{labels:{js(race_labels)},datasets:{ds_js}}},
   options:{{responsive:true,maintainAspectRatio:false,
+    layout:{{padding:{{top:10,left:0}}}},
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: P${{ctx.parsed.y}}`}}}}}},
     scales:{{
       x:{{ticks:{{color:'#888',font:{{size:12}}}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
       y:{{reverse:true,min:0.5,max:{len(M)}+0.5,
         afterBuildTicks:function(ax){{ax.ticks=[...[{','.join(str(i) for i in range(1,len(M)+1))}].map(v=>{{return{{value:v}};}})]}},
-        ticks:{{color:'#888',callback:function(v){{const r=Math.round(v);return(r>=1&&r<={len(M)})?'P'+r:'';}}}},
-        grid:{{color:'rgba(255,255,255,0.06)'}}}}
+        ticks:{{color:'#888',display:false}},
+        grid:{{color:'rgba(255,255,255,0.06)'}},border:{{display:false}}}}
     }}}}
 }});
+function freezePosYAxis(){{
+  const yAxis=document.getElementById('posChartYAxis');
+  const cvs=document.getElementById('posChart');
+  const scale=posChart.scales.y;
+  if(!scale)return;
+  const dpr=window.devicePixelRatio||1;
+  const cssH=cvs.clientHeight||360;
+  const fc=document.createElement('canvas');
+  fc.width=36*dpr; fc.height=cssH*dpr;
+  fc.style.width='36px'; fc.style.height=cssH+'px';
+  const ctx2=fc.getContext('2d');
+  ctx2.scale(dpr,dpr);
+  ctx2.fillStyle='#0f0f0f';
+  ctx2.fillRect(0,0,36,cssH);
+  const ticks=scale.ticks;
+  const top=scale.top; const bottom=scale.bottom;
+  const range=bottom-top;
+  const vMin=scale.min; const vMax=scale.max;
+  ticks.forEach(t=>{{
+    const v=t.value;
+    if(v<1||v>{len(M)})return;
+    const yPx=top+((vMax-v)/(vMax-vMin))*range;
+    ctx2.fillStyle='#888';
+    ctx2.font='11px -apple-system,BlinkMacSystemFont,sans-serif';
+    ctx2.textAlign='right';
+    ctx2.fillText('P'+Math.round(v),32,yPx+4);
+  }});
+  yAxis.innerHTML='';
+  yAxis.appendChild(fc);
+}}
+posChart.options.animation={{onComplete:freezePosYAxis}};
+posChart.update();
 document.getElementById('legend-positions').innerHTML={js(legend_html)};
 }})();
 </script>"""
@@ -1852,8 +1805,7 @@ def panel_picks(data):
     ), key=lambda r: next((rd["round"] for rd in data["races"] if rd["name"] == r), 99))
 
     if not all_lineup_races:
-        return """<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Team Picks · No lineup data available yet</div>"""
+        return """<div class="subtitle">Team Picks · No lineup data available yet</div>"""
 
     n_managers = len(M)
 
@@ -2052,6 +2004,7 @@ def panel_picks(data):
 
     regrets = []
     wins    = []
+    all_trade_impacts = []
     for i, rname in enumerate(all_lineup_races[1:], 1):
         prev_rname = all_lineup_races[i - 1]
 
@@ -2141,6 +2094,12 @@ def panel_picks(data):
             pts_margin = round(bought_total_pts - sold_total_pts, 1)
             bud_margin = round(bought_total_bud - sold_total_bud, 2)
 
+            # Every trade's swing, regardless of regret/win classification —
+            # feeds Transfer Impact per Race/Overview, which cares about the
+            # raw swing for every trade a manager made, not just the top 3
+            # standout regrets/wins the Trade Regrets tables highlight.
+            all_trade_impacts.append({**entry, "ptsMargin": pts_margin, "budMargin": bud_margin})
+
             if diff_score > 0 and sold_total_pts > bought_total_pts:
                 # Regret: sold group outperformed bought group
                 regrets.append({**entry,
@@ -2160,6 +2119,25 @@ def panel_picks(data):
     top_regrets = regrets[:3]
     wins.sort(key=lambda x: -x["score"])
     top_wins = wins[:3]
+
+    # ── Transfer impact (per race + season overview) ─────────────────────────
+    impact_by_manager = {}
+    for t in all_trade_impacts:
+        impact_by_manager.setdefault(t["manager"], []).append(t)
+
+    impact_overview = []
+    for m in M:
+        trades = impact_by_manager.get(m["name"], [])
+        impact_overview.append({
+            "name":     m["name"],
+            "color":    m["color"],
+            "goodPts":  sum(1 for t in trades if t["ptsMargin"] > 0),
+            "badPts":   sum(1 for t in trades if t["ptsMargin"] < 0),
+            "netPts":   round(sum(t["ptsMargin"] for t in trades), 1),
+            "goodBud":  sum(1 for t in trades if t["budMargin"] > 0),
+            "badBud":   sum(1 for t in trades if t["budMargin"] < 0),
+            "netBud":   round(sum(t["budMargin"] for t in trades), 2),
+        })
 
     # ── Loyalty ───────────────────────────────────────────────────────────────
     if len(all_lineup_races) >= 2:
@@ -2197,6 +2175,7 @@ def panel_picks(data):
     race_options = "".join(
         f'<option value="{rn}"{" selected" if rn == _last_done else ""}>{rn}</option>'
         for rn in _rd_names)
+    impact_manager_opts = "".join(f'<option value="{m["name"]}">{m["name"]}</option>' for m in M)
 
     def fmt_pts(v):
         return f'+{v}' if v >= 0 else str(v)
@@ -2254,8 +2233,7 @@ def panel_picks(data):
 <div class="hint" style="margin-bottom:12px">Trades where the bought group outranked what was sold on both points and value change the following race. Score is a combined percentile ranking (0–100). Limitless races excluded.</div>
 {trade_swing_table(top_wins)}"""
 
-    return f"""<h1>🏎 The Undercut Collective</h1>
-<div class="subtitle">Team Picks · Lineups, trades &amp; transfer analysis</div>
+    return f"""<div class="subtitle">Team Picks · Lineups, trades &amp; transfer analysis</div>
 <div class="metric-grid">
   <div class="mc"><div class="mc-val">{top_driver.split('. ')[-1] if '. ' in top_driver else top_driver}</div><div class="mc-lbl">Most picked driver ({top_driver_cnt}×)</div></div>
   <div class="mc"><div class="mc-val">{top_con}</div><div class="mc-lbl">Most picked constructor ({top_con_cnt}×)</div></div>
@@ -2264,11 +2242,15 @@ def panel_picks(data):
 </div>
 
 <div class="section-label">Lineup viewer</div>
-<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-  <label style="font-size:13px">Race</label>
-  <select id="raceSel" onchange="ucPicksRace(this.value)">{race_options}</select>
-  <label style="font-size:13px;margin-left:12px">Manager</label>
-  <select id="teamSel" onchange="ucPicksTeam(raceSel.value, this.value)"></select>
+<div style="display:flex;gap:16px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+  <div style="display:flex;gap:12px;align-items:center">
+    <label style="font-size:13px">Race</label>
+    <select id="raceSel" onchange="ucPicksRace(this.value)">{race_options}</select>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center">
+    <label style="font-size:13px">Manager</label>
+    <select id="teamSel" onchange="ucPicksTeam(raceSel.value, this.value)"></select>
+  </div>
 </div>
 <div id="picks-team-display"></div>
 
@@ -2279,6 +2261,33 @@ def panel_picks(data):
   <select id="tradeRaceSel">{trade_race_opts}</select>
 </div>
 <div id="picks-trades-display"></div>
+
+<div class="section-label">Transfer impact overview</div>
+<div class="hint" style="margin-bottom:12px">How many good and bad transfers has each manager made, and what's been the overall impact throughout {SEASON}?</div>
+<div class="toggle-group" id="impactOverviewToggle" style="margin-bottom:1rem">
+  <button type="button" class="toggle-btn active" data-metric="pts">Points impact</button>
+  <button type="button" class="toggle-btn" data-metric="bud">Budget impact</button>
+</div>
+<div class="card" style="padding:12px 16px">
+  <div id="impactOverviewChartWrap" style="position:relative"><canvas id="impactOverviewChart"></canvas></div>
+</div>
+
+<div class="section-label">Transfer impact per race</div>
+<div class="hint" style="margin-bottom:12px">What impact did the transfers you made each race have on your budget and total score? Each bar is one trade, showing the net swing of bought vs. sold.</div>
+<div style="display:flex;gap:16px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+  <div style="display:flex;gap:12px;align-items:center">
+    <label style="font-size:13px">Manager</label>
+    <select id="impactManagerSel">{impact_manager_opts}</select>
+  </div>
+  <div class="toggle-group" id="impactPerRaceToggle">
+    <button type="button" class="toggle-btn active" data-metric="pts">Points impact</button>
+    <button type="button" class="toggle-btn" data-metric="bud">Budget impact</button>
+  </div>
+</div>
+<div class="card" style="padding:12px 16px">
+  <div id="impactPerRaceChartWrap" style="position:relative"><canvas id="impactPerRaceChart"></canvas></div>
+  <div id="impactPerRaceEmpty" style="display:none;padding:1rem;color:#555;font-size:13px;text-align:center">No transfers recorded yet for this manager.</div>
+</div>
 
 <div class="section-label">Driver &amp; constructor popularity</div>
 <div class="hint" style="margin-bottom:12px">How many managers picked each driver/constructor for the selected race, with their actual points. Updates with the race selector above.</div>
@@ -2306,6 +2315,8 @@ const teamsByRace={js(teams_by_race)};
 const popByRace={js(popularity_by_race)};
 const tradesByRace={js(trades_by_race)};
 const drsStats={js(drs_stats)};
+const impactByManager={js(impact_by_manager)};
+const impactOverview={js(impact_overview)};
 const nManagers={n_managers};
 const p1Manager={js(M[0]["name"] if M else "")};
 const raceSel=document.getElementById('raceSel');
@@ -2402,6 +2413,95 @@ function renderTrades(rname){{
 }}
 tradeRaceSel.addEventListener('change', function(){{ renderTrades(this.value); }});
 
+/* ── Transfer impact ── */
+let impactOverviewChart=null;
+function renderImpactOverview(metric){{
+  const wrap=document.getElementById('impactOverviewChartWrap');
+  const rows=impactOverview.map(m=>({{
+    name: m.name, color: m.color,
+    net:  metric==='pts'?m.netPts:m.netBud,
+    good: metric==='pts'?m.goodPts:m.goodBud,
+    bad:  metric==='pts'?m.badPts:m.badBud,
+  }}));
+  wrap.style.height=Math.max(140, rows.length*44)+'px';
+  const labels=rows.map(r=>`${{r.name}}  (${{r.good}}W-${{r.bad}}L)`);
+  const values=rows.map(r=>r.net);
+  const colors=values.map(v=>v>0?'#4caf50':v<0?'#f44336':'#555');
+  const bound=Math.max(1, ...values.map(v=>Math.abs(v)))*1.15;
+  const unit=metric==='pts'?' pts':'m';
+  if(impactOverviewChart)impactOverviewChart.destroy();
+  impactOverviewChart=new Chart(document.getElementById('impactOverviewChart'),{{
+    type:'bar',
+    data:{{labels:labels,datasets:[{{data:values,backgroundColor:colors,borderRadius:3,barThickness:18}}]}},
+    options:{{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.parsed.x>=0?'+':''}}${{ctx.parsed.x}}${{unit}}`}}}}}},
+      scales:{{
+        x:{{min:-bound,max:bound,ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+        y:{{ticks:{{color:'#ccc',font:{{size:12}}}},grid:{{display:false}}}}
+      }}}}
+  }});
+}}
+
+let impactPerRaceChart=null;
+function renderImpactPerRace(managerName, metric){{
+  const trades=impactByManager[managerName]||[];
+  const chartWrap=document.getElementById('impactPerRaceChartWrap');
+  const emptyEl=document.getElementById('impactPerRaceEmpty');
+  const canvas=document.getElementById('impactPerRaceChart');
+  if(!trades.length){{
+    canvas.style.display='none';
+    emptyEl.style.display='block';
+    if(impactPerRaceChart){{impactPerRaceChart.destroy();impactPerRaceChart=null;}}
+    return;
+  }}
+  canvas.style.display='block';
+  emptyEl.style.display='none';
+  chartWrap.style.height=Math.max(140, trades.length*44)+'px';
+  const labels=trades.map(t=>t.nextRace);
+  const values=trades.map(t=>metric==='pts'?t.ptsMargin:t.budMargin);
+  const colors=values.map(v=>v>0?'#4caf50':v<0?'#f44336':'#555');
+  const bound=Math.max(1, ...values.map(v=>Math.abs(v)))*1.15;
+  const unit=metric==='pts'?' pts':'m';
+  if(impactPerRaceChart)impactPerRaceChart.destroy();
+  impactPerRaceChart=new Chart(canvas,{{
+    type:'bar',
+    data:{{labels:labels,datasets:[{{data:values,backgroundColor:colors,borderRadius:3,barThickness:18}}]}},
+    options:{{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{
+        label:ctx=>` ${{ctx.parsed.x>=0?'+':''}}${{ctx.parsed.x}}${{unit}}`,
+        afterLabel:ctx=>{{
+          const t=trades[ctx.dataIndex];
+          return [`Sold: ${{t.sold.map(p=>p.name).join(', ')}}`,`Bought: ${{t.bought.map(p=>p.name).join(', ')}}`];
+        }}
+      }}}}}},
+      scales:{{
+        x:{{min:-bound,max:bound,ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+        y:{{ticks:{{color:'#ccc',font:{{size:12}}}},grid:{{display:false}}}}
+      }}}}
+  }});
+}}
+
+const impactManagerSel=document.getElementById('impactManagerSel');
+let impactPerRaceMetric='pts';
+let impactOverviewMetric='pts';
+document.getElementById('impactPerRaceToggle').addEventListener('click',function(e){{
+  const btn=e.target.closest('.toggle-btn');
+  if(!btn)return;
+  this.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  impactPerRaceMetric=btn.dataset.metric;
+  renderImpactPerRace(impactManagerSel.value, impactPerRaceMetric);
+}});
+document.getElementById('impactOverviewToggle').addEventListener('click',function(e){{
+  const btn=e.target.closest('.toggle-btn');
+  if(!btn)return;
+  this.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  impactOverviewMetric=btn.dataset.metric;
+  renderImpactOverview(impactOverviewMetric);
+}});
+impactManagerSel.addEventListener('change',function(){{renderImpactPerRace(this.value, impactPerRaceMetric);}});
+
 /* ── DRS table ── */
 (function(){{
   const el=document.getElementById('picks-drs-display');
@@ -2465,6 +2565,8 @@ window.ucPicksRace=showRace;
 window.ucPicksTeam=showTeam;
 showRace(raceSel.value);
 renderTrades(tradeRaceSel.value);
+renderImpactOverview(impactOverviewMetric);
+renderImpactPerRace(impactManagerSel.value, impactPerRaceMetric);
 }})();
 </script>"""
 
@@ -2509,6 +2611,9 @@ SHARED_CSS = """
   .bar-fill { height: 100%; border-radius: 2px; }
   /* scrollable wrappers for wide tables */
   .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .toggle-group { display: inline-flex; gap: 4px; background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 8px; padding: 3px; }
+  .toggle-btn { background: transparent; border: none; color: #888; font-size: 12px; font-weight: 500; font-family: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+  .toggle-btn.active { background: #2a2a2a; color: #e8e8e6; }
   /* mobile */
   @media (max-width: 600px) {
     .panel-body { padding: 1rem; }
@@ -2517,10 +2622,6 @@ SHARED_CSS = """
     .mc-val { font-size: 16px; }
   }
   /* leaderboard */
-  .podium-row { display: flex; gap: 6px; margin-bottom: 1.5rem; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
-  .podium-card { flex-shrink: 0; min-width: 160px; background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 8px; padding: 10px 12px; }
-  .podium-pos { font-size: 11px; color: #888; margin-bottom: 2px; }
-  .podium-name { font-size: 13px; font-weight: 500; }
   .row { display: grid; grid-template-columns: 26px 1fr 52px 52px; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid #2a2a2a; }
   .row:last-child { border-bottom: none; }
   .pos-badge { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex-shrink: 0; }
@@ -2534,7 +2635,7 @@ SHARED_CSS = """
   .race-title { font-size: 15px; font-weight: 500; }
   .race-round { font-size: 11px; color: #888; }
   .podium-strip { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 12px; }
-  .slot { border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+  .slot { border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .medal { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; flex-shrink: 0; }
   .slot-name { font-size: 13px; font-weight: 500; }
   .slot-pts { font-size: 11px; color: #888; }
