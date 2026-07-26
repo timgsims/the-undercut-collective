@@ -1419,9 +1419,13 @@ def panel_budget(data):
     # Budget change per race — HTML table (no canvas, no lifecycle issues)
     max_races = max((len(m["budgets"]) for m in M), default=1)
     # Only show races that have actually completed (budget data exists for all managers)
-    # change index i means: budgets[i] - budgets[i-1], so race label is budget_race_names[i]
+    # budgets[0] is the pre-season 100.0 placeholder with no race name of its
+    # own — change[i] = budgets[i+1] - budgets[i] is the movement CAUSED BY
+    # race i, so it's labeled with b_races[i], not b_races[i+1] (that was the
+    # bug: skipped Australia entirely, shifted every other label by one race,
+    # and left the most recent column with no header at all).
     n_change_cols = max_races - 1  # number of completed race changes
-    change_race_names = b_races[1:max_races] if len(b_races) >= max_races else b_races[1:]
+    change_race_names = b_races[:n_change_cols]
 
     # Build per-manager change lists (only completed races)
     manager_changes = []
