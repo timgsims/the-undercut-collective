@@ -1451,13 +1451,6 @@ def panel_podiums(data):
     managers_with_pod = sum(1 for m in M if sum(FD.get(m["name"], [0,0,0])[:3]) > 0)
     diff_winners = len({name for p in POD for name in p["first"]})
 
-    medal_styles = ["background:#FFD700;color:#7a5800",
-                    "background:#C0C0C0;color:#4a4a4a",
-                    "background:#CD7F32;color:#5a2d00"]
-    slot_styles  = ["background:#2a2200;border:0.5px solid #FFD700",
-                    "background:#222;border:0.5px solid #C0C0C0",
-                    "background:#221a12;border:0.5px solid #CD7F32"]
-
     def get_color(name):
         return MANAGER_COLOURS.get(name, "#888")
 
@@ -1466,43 +1459,45 @@ def panel_podiums(data):
         if m:
             chip = m["chip_by_race"].get(race_name)
             if chip and chip in CHIP_STYLES:
-                # ml="0" — this pill sits on its own line under the name (not
-                # inline next to it), so it needs to start flush left rather
-                # than carry the 4px "next to text" margin used elsewhere.
-                # (A negative value was tried to compensate for the pill's
-                # own rounded-corner padding, but the parent's overflow:hidden
-                # guard — needed to stop a long label blowing out the grid —
-                # clipped the pill's left edge into a flat corner. Not worth
-                # that tradeoff for a few px of optical padding.)
                 return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True, ml="0")
         return ""
 
-    cards_html = ""
+    # A real table (rather than the old flex/grid slot cards) so each cell's
+    # name/pill/points stack cleanly without the alignment quirks a custom
+    # box layout kept running into — same reasoning as Latest Podiums on the
+    # Leaderboard page.
+    def pod_slot_cell(names_in_slot, race_name):
+        if not names_in_slot:
+            return '<span style="color:#555">TBC</span>'
+        items = []
+        for name in names_in_slot:
+            pts = next((m["scores"].get(race_name, "") for m in M if m["name"] == name), "")
+            pts_html = f'<div style="color:#888;font-size:11px">{pts} pts</div>' if pts != "" else ""
+            pill = get_chip_pill(name, race_name)
+            pill_html = f'<div style="margin-top:2px">{pill}</div>' if pill else ""
+            items.append(
+                f'<div><div style="color:{get_color(name)};font-weight:500">{name}</div>{pill_html}{pts_html}</div>'
+            )
+        return f'<div style="display:flex;flex-direction:column;gap:8px">{"".join(items)}</div>'
+
+    pod_rows = ""
     for pod in POD:
         filled = pod["first"] or pod["second"] or pod["third"]
-        style = "" if filled else 'style="border-style:dashed;opacity:0.5"'
-        slots = ""
-        for j, key in enumerate(["first", "second", "third"]):
-            names_in_slot = pod[key]
-            if names_in_slot:
-                names_html = ""
-                for name in names_in_slot:
-                    pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
-                    pts_html = f'<div class="slot-pts">{pts} pts</div>' if pts != "" else ""
-                    pill = get_chip_pill(name, pod["race"])
-                    pill_html = f'<div style="margin-top:0">{pill}</div>' if pill else ""
-                    names_html += (f'<div><div class="slot-name" style="color:{get_color(name)}">'
-                                   f'{name}</div>{pill_html}{pts_html}</div>')
-                slots += (f'<div class="slot" style="{slot_styles[j]}">'
-                          f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
-                          f'<div style="display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden">{names_html}</div></div>')
-            else:
-                slots += (f'<div class="slot" style="{slot_styles[j]}">'
-                          f'<div class="medal" style="{medal_styles[j]}">{j+1}</div>'
-                          f'<div class="tbd">TBC</div></div>')
-        cards_html += f"""<div class="race-podium" {style}>
-  <div class="race-header"><span class="race-title">{pod['race']}{sprint_pill(small=True) if pod.get('is_sprint') else ''}</span></div>
-  <div class="podium-slots">{slots}</div>
+        row_style = 'opacity:0.5' if not filled else ''
+        pod_rows += f"""<tr style="{row_style}">
+  <td style="white-space:nowrap;color:#888;vertical-align:top">{pod['race']}{sprint_pill(small=True) if pod.get('is_sprint') else ''}</td>
+  <td style="vertical-align:top">{pod_slot_cell(pod['first'], pod['race'])}</td>
+  <td style="vertical-align:top">{pod_slot_cell(pod['second'], pod['race'])}</td>
+  <td style="vertical-align:top">{pod_slot_cell(pod['third'], pod['race'])}</td>
+</tr>"""
+
+    cards_html = f"""<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+<table class="regret-table" style="min-width:0">
+  <thead><tr>
+    <th>Race</th><th style="color:#FFD700">1st</th><th style="color:#C0C0C0">2nd</th><th style="color:#CD7F32">3rd</th>
+  </tr></thead>
+  <tbody>{pod_rows}</tbody>
+</table>
 </div>"""
 
     # Podium share — same finish_dist the Stats tab uses, not an independent
@@ -1632,8 +1627,8 @@ def panel_stats(data):
     # P1-P8/Pts flush to the right edge of the card (matching the original
     # look there) instead of the whole table clustering flush-left with a
     # dead gap on the right.
-    fin_grid = f"26px minmax(62px,1fr) repeat({N_FIN},26px) 36px"
-    fin_min_w = 26 + 62 + 26 * N_FIN + 36 + 5 * (N_FIN + 3)
+    fin_grid = f"26px minmax(58px,1fr) repeat({N_FIN},26px) 36px"
+    fin_min_w = 26 + 58 + 26 * N_FIN + 36 + 5 * (N_FIN + 3)
 
     return f"""<div class="subtitle">Stats · Season overview &amp; highlights</div>
 <style>.srow{{display:grid;grid-template-columns:{fin_grid};align-items:center;gap:5px;padding:7px 0;border-bottom:0.5px solid #2a2a2a;min-width:{fin_min_w}px}}</style>
@@ -1644,7 +1639,7 @@ def panel_stats(data):
   <div class="mc"><div class="mc-val">{swing_m['name']}</div><div class="mc-lbl">Biggest swing ({swing_val} places)</div></div>
 </div>
 <div class="section-label">Finish distribution</div>
-<div class="card" style="padding:4px 4px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+<div class="card" style="padding:4px 8px 4px 2px;overflow-x:auto;-webkit-overflow-scrolling:touch">
   <div style="display:grid;grid-template-columns:{fin_grid};gap:5px;padding:6px 0 2px;min-width:{fin_min_w}px">
     <div></div><div></div>{pos_headers}<div style="font-size:9px;color:#555;text-align:right">Pts</div>
   </div>
@@ -2713,10 +2708,6 @@ SHARED_CSS = """
   .bcol { font-size: 13px; text-align: right; white-space: nowrap; }
   .col-hdr { font-size: 10px; color: #555; text-align: right; white-space: nowrap; }
   .pos { color: #1D9E75; } .neg { color: #E24B4A; } .neu { color: #888; }
-  /* podiums */
-  .race-podium { background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 10px; }
-  .podium-slots { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
-  .tbd { font-size: 12px; color: #555; font-style: italic; }
   /* stats — .srow grid-template-columns injected dynamically by panel_stats */
   .srow:last-child { border-bottom: none; }
   .sname { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
