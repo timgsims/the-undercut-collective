@@ -622,6 +622,91 @@ def race_label(race, small=False):
     return race["name"] + (sprint_pill(small) if race.get("is_sprint") else "")
 
 
+def podium_table_html(pods, M):
+    """Row-per-finisher podium table (Race | Pos | Manager | Points), shared
+    by the Podiums page's Race Results and the Leaderboard's Latest Podiums
+    so the two can't drift apart. Built as CSS-grid rows rather than a real
+    <table> with rowspan — a rowspan'd cell only draws its border under the
+    last row of its span, leaving every "continuation" row's gridline
+    broken/partial under the Race/Pos columns, and table-cell borders also
+    render less reliably at 0.5px on mobile than a plain div border does.
+    Race/Pos text simply isn't repeated on continuation rows, giving the
+    same "merged" look without relying on real cell merging for it."""
+    def get_color(name):
+        return MANAGER_COLOURS.get(name, "#888")
+
+    def get_chip_pill(name, race_name):
+        m = next((mm for mm in M if mm["name"] == name), None)
+        if m:
+            chip = m["chip_by_race"].get(race_name)
+            if chip and chip in CHIP_STYLES:
+                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True)
+        return ""
+
+    medal_colors = {"1st": "#FFD700", "2nd": "#C0C0C0", "3rd": "#CD7F32"}
+    pod_grid = "90px 40px minmax(100px,1fr) 64px"
+    pod_min_w = 90 + 40 + 100 + 64 + 10 * 3
+
+    all_rows = []   # [(race_cell, pos_cell, name_cell, pts_txt, filled)]
+    for pod in pods:
+        filled = bool(pod["first"] or pod["second"] or pod["third"])
+        entries = []
+        for label, names in (("1st", pod["first"]), ("2nd", pod["second"]), ("3rd", pod["third"])):
+            entries.extend((label, name) for name in names) if names else entries.append((label, None))
+
+        race_label_html = pod["race"] + (sprint_pill(small=True) if pod.get("is_sprint") else "")
+        race_shown = False
+        i = 0
+        while i < len(entries):
+            label = entries[i][0]
+            j = i
+            while j < len(entries) and entries[j][0] == label:
+                j += 1
+            for k in range(i, j):
+                _, name = entries[k]
+                race_cell = race_label_html if not race_shown else ""
+                race_shown = True
+                pos_cell = (f'<span style="color:{medal_colors[label]};font-weight:600">{label}</span>'
+                            if k == i else "")
+                if name is None:
+                    all_rows.append((race_cell, pos_cell, '<span style="color:#555">TBC</span>', "", filled))
+                else:
+                    pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
+                    pts_txt = f'{pts} pts' if pts != "" else "—"
+                    pill = get_chip_pill(name, pod["race"])
+                    name_cell = f'<span style="color:{get_color(name)};font-weight:500">{name}{pill}</span>'
+                    all_rows.append((race_cell, pos_cell, name_cell, pts_txt, filled))
+            i = j
+
+    pod_rows = ""
+    for idx, (race_cell, pos_cell, name_cell, pts_txt, filled) in enumerate(all_rows):
+        border = "" if idx == len(all_rows) - 1 else "border-bottom:0.5px solid #2a2a2a;"
+        opacity = "opacity:0.5;" if not filled else ""
+        pod_rows += (
+            f'<div style="display:grid;grid-template-columns:{pod_grid};gap:10px;align-items:center;'
+            f'padding:8px 0;{border}{opacity}min-width:{pod_min_w}px">'
+            f'<div style="color:#888;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{race_cell}</div>'
+            f'<div style="font-size:13px">{pos_cell}</div>'
+            f'<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{name_cell}</div>'
+            f'<div style="text-align:right;color:#888;font-size:12px;white-space:nowrap">{pts_txt}</div>'
+            f'</div>'
+        )
+
+    pod_header = (
+        f'<div style="display:grid;grid-template-columns:{pod_grid};gap:10px;padding:4px 0 8px;min-width:{pod_min_w}px">'
+        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Race</div>'
+        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Pos</div>'
+        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Manager</div>'
+        f'<div style="font-size:9px;color:#555;text-align:right;text-transform:uppercase;letter-spacing:.04em">Points</div>'
+        f'</div>'
+    )
+
+    return f"""<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+{pod_header}
+{pod_rows}
+</div>"""
+
+
 def _global_standing_section(data):
     """Current global-rank standing table — how the league stacks up against
     every F1 Fantasy player worldwide. Lives at the bottom of the Leaderboard
@@ -830,7 +915,7 @@ def panel_leaderboard(data):
         box_border = "1px solid #ffaa44" if not d["isFinal"] else "0.5px solid #2a2a2a"
         title_color = "#ffaa44" if not d["isFinal"] else "#eee"
 
-        live_box = f"""<div class="card" style="border:{box_border};margin-bottom:1rem">
+        live_box = f"""<div class="card" style="border:{box_border};margin-bottom:1rem;padding-top:16px">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
     <span style="font-size:18px">🏁</span>
     <span style="font-weight:600;color:{title_color}">{header_text}</span>
@@ -840,31 +925,10 @@ def panel_leaderboard(data):
   {table_rows}
 </div>"""
 
-    # Latest podiums table — 3 most recent races with a podium, newest first
-    def pod_slot_cell(names_in_slot):
-        if not names_in_slot:
-            return '<span style="color:#555">—</span>'
-        return ", ".join(
-            f'<span style="color:{MANAGER_COLOURS.get(name, "#888")};font-weight:500">{name}</span>'
-            for name in names_in_slot
-        )
-
-    pod_rows = ""
-    for pod in reversed([p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]):
-        pod_rows += f"""<tr>
-  <td style="white-space:nowrap;color:#888">{pod['race']}{sprint_pill(small=True) if pod.get('is_sprint') else ''}</td>
-  <td>{pod_slot_cell(pod['first'])}</td>
-  <td>{pod_slot_cell(pod['second'])}</td>
-  <td>{pod_slot_cell(pod['third'])}</td>
-</tr>"""
-    pod_table_html = f"""<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-<table class="regret-table" style="min-width:0">
-  <thead><tr>
-    <th>Race</th><th style="color:#FFD700">1st</th><th style="color:#C0C0C0">2nd</th><th style="color:#CD7F32">3rd</th>
-  </tr></thead>
-  <tbody>{pod_rows}</tbody>
-</table>
-</div>"""
+    # Latest podiums — 3 most recent races with a podium, newest first, same
+    # table format as Race Results on the Podiums page.
+    recent_pods = list(reversed([p for p in data["podiums"] if p["first"] or p["second"] or p["third"]][-3:]))
+    pod_table_html = podium_table_html(recent_pods, M)
 
     # Standings rows
     medal_styles = [
@@ -1078,7 +1142,7 @@ function renderWeekendSummary(rname){{
     ${{r.sessions.map(v=>`<div style="text-align:right;font-size:13px">${{v===null?'—':v}}</div>`).join('')}}
     <div style="text-align:right;font-size:13px;font-weight:600">${{r.total===null?'—':r.total}}</div>
   </div>`).join('');
-  el.innerHTML=`<div class="card" style="border:${{boxBorder}}">
+  el.innerHTML=`<div class="card" style="border:${{boxBorder}};padding-top:16px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <span style="font-size:18px">🏁</span>
       <span style="font-weight:600;color:${{titleColor}}">${{headerText}}</span>
@@ -1451,87 +1515,7 @@ def panel_podiums(data):
     managers_with_pod = sum(1 for m in M if sum(FD.get(m["name"], [0,0,0])[:3]) > 0)
     diff_winners = len({name for p in POD for name in p["first"]})
 
-    def get_color(name):
-        return MANAGER_COLOURS.get(name, "#888")
-
-    def get_chip_pill(name, race_name):
-        m = next((mm for mm in M if mm["name"] == name), None)
-        if m:
-            chip = m["chip_by_race"].get(race_name)
-            if chip and chip in CHIP_STYLES:
-                return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True)
-        return ""
-
-    # One row per podium finisher, built as CSS-grid rows (same pattern as
-    # the Leaderboard's Standings table) rather than a real <table> with
-    # rowspan — a rowspan'd cell only draws its border under the LAST row of
-    # its span, which left every "continuation" row's gridline broken/partial
-    # under the Race/Pos columns. table-cell borders also render less
-    # reliably at 0.5px on mobile than a plain div border does. Race/Pos text
-    # simply isn't repeated on continuation rows, giving the same "merged"
-    # look without relying on real cell merging for it.
-    medal_colors = {"1st": "#FFD700", "2nd": "#C0C0C0", "3rd": "#CD7F32"}
-    pod_grid = "90px 40px minmax(100px,1fr) 64px"
-    pod_min_w = 90 + 40 + 100 + 64 + 10 * 3
-
-    all_rows = []   # [(race_html_or_blank, pos_html_or_blank, name, chip_html, pts_txt, filled)]
-    for pod in POD:
-        filled = bool(pod["first"] or pod["second"] or pod["third"])
-        entries = []
-        for label, names in (("1st", pod["first"]), ("2nd", pod["second"]), ("3rd", pod["third"])):
-            entries.extend((label, name) for name in names) if names else entries.append((label, None))
-
-        race_label_html = pod["race"] + (sprint_pill(small=True) if pod.get("is_sprint") else "")
-        race_shown = False
-        i = 0
-        while i < len(entries):
-            label = entries[i][0]
-            j = i
-            while j < len(entries) and entries[j][0] == label:
-                j += 1
-            for k in range(i, j):
-                _, name = entries[k]
-                race_cell = race_label_html if not race_shown else ""
-                race_shown = True
-                pos_cell = (f'<span style="color:{medal_colors[label]};font-weight:600">{label}</span>'
-                            if k == i else "")
-                if name is None:
-                    all_rows.append((race_cell, pos_cell, '<span style="color:#555">TBC</span>', "", filled))
-                else:
-                    pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
-                    pts_txt = f'{pts} pts' if pts != "" else "—"
-                    pill = get_chip_pill(name, pod["race"])
-                    name_cell = f'<span style="color:{get_color(name)};font-weight:500">{name}{pill}</span>'
-                    all_rows.append((race_cell, pos_cell, name_cell, pts_txt, filled))
-            i = j
-
-    pod_rows = ""
-    for idx, (race_cell, pos_cell, name_cell, pts_txt, filled) in enumerate(all_rows):
-        border = "" if idx == len(all_rows) - 1 else "border-bottom:0.5px solid #2a2a2a;"
-        opacity = "opacity:0.5;" if not filled else ""
-        pod_rows += (
-            f'<div style="display:grid;grid-template-columns:{pod_grid};gap:10px;align-items:center;'
-            f'padding:8px 0;{border}{opacity}min-width:{pod_min_w}px">'
-            f'<div style="color:#888;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{race_cell}</div>'
-            f'<div style="font-size:13px">{pos_cell}</div>'
-            f'<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{name_cell}</div>'
-            f'<div style="text-align:right;color:#888;font-size:12px;white-space:nowrap">{pts_txt}</div>'
-            f'</div>'
-        )
-
-    pod_header = (
-        f'<div style="display:grid;grid-template-columns:{pod_grid};gap:10px;padding:4px 0 8px;min-width:{pod_min_w}px">'
-        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Race</div>'
-        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Pos</div>'
-        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Manager</div>'
-        f'<div style="font-size:9px;color:#555;text-align:right;text-transform:uppercase;letter-spacing:.04em">Points</div>'
-        f'</div>'
-    )
-
-    cards_html = f"""<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
-{pod_header}
-{pod_rows}
-</div>"""
+    cards_html = podium_table_html(POD, M)
 
     # Podium share — same finish_dist the Stats tab uses, not an independent
     # re-count from POD, so the two pages can't drift apart. Shown as one
@@ -1679,7 +1663,7 @@ def panel_stats(data):
   {finish_rows_html}
 </div>
 <div class="section-label">Chip usage</div>
-<div class="card">{chip_rows_html}</div>
+<div class="card" style="padding-left:8px">{chip_rows_html}</div>
 <div class="section-label">Season highlights</div>
 <div class="hl-grid">{highlights_html}</div>"""
 
@@ -1892,7 +1876,8 @@ def panel_picks(data):
                 "racePts":   race_pts,
                 "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
                 "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
-                               "pts": p["pts"], "isCon": p["is_constructor"]} for p in picks],
+                               "pts": p["pts"], "isCon": p["is_constructor"],
+                               "seasonPts": season_pts.get(p["name"]) or 0} for p in picks],
             })
         # Sort by race points descending so top scorer shows first
         teams_by_race[rname].sort(key=lambda t: -t["racePts"])
@@ -2390,8 +2375,25 @@ function showTeam(rname, manName){{
   if(!t){{document.getElementById('picks-team-display').innerHTML='';return;}}
   const chipHtml=t.chip
     ?`<span class="chip-pill" style="background:${{t.chip.bg}};color:${{t.chip.tc}};margin-left:auto">${{t.chip.label}}</span>`:'';
-  const drivers=t.picks.filter(p=>!p.isCon);
-  const cons=t.picks.filter(p=>p.isCon);
+  // Sorted by current-season points (highest first), then arranged so the
+  // 2-column grid reads top-to-bottom within a column before moving to the
+  // next column, rather than the grid's default left-to-right/wrap order.
+  function bySeasonPts(list){{
+    return [...list].sort((a,b)=>(b.seasonPts||0)-(a.seasonPts||0));
+  }}
+  function toColumnMajor(sorted, cols){{
+    const rows=Math.ceil(sorted.length/cols)||1;
+    const grid=new Array(rows*cols).fill(null);
+    let idx=0;
+    for(let c=0;c<cols;c++){{
+      for(let r=0;r<rows;r++){{
+        if(idx<sorted.length) grid[r*cols+c]=sorted[idx++];
+      }}
+    }}
+    return grid.filter(x=>x!==null);
+  }}
+  const drivers=toColumnMajor(bySeasonPts(t.picks.filter(p=>!p.isCon)), 2);
+  const cons=toColumnMajor(bySeasonPts(t.picks.filter(p=>p.isCon)), 2);
   function pickCard(p){{
     const ptsTxt=p.pts!=null?(p.pts>=0?`+${{p.pts}}`:`${{p.pts}}`):'–';
     const ptsColor=p.pts==null?'#555':p.pts>0?'#4caf50':p.pts<0?'#f44336':'#888';
@@ -2766,7 +2768,10 @@ SHARED_CSS = """
   .team-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .team-name { font-size: 14px; font-weight: 500; }
   .team-sub { font-size: 11px; color: #888; }
-  .picks-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(130px,1fr)); gap: 6px; }
+  /* Fixed 2 columns (not auto-fill) so the JS can reliably arrange picks
+     top-to-bottom-then-left-to-right by season points — a responsive
+     column count would make that ordering meaningless. */
+  .picks-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 6px; }
   .pick { border-radius: 8px; padding: 7px 10px; background: #111; border: 0.5px solid #2a2a2a; }
   .pick-label { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
   .pick-name { font-size: 12px; font-weight: 500; }
