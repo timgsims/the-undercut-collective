@@ -1462,60 +1462,75 @@ def panel_podiums(data):
                 return chip_pill(chip, CHIP_STYLES[chip]["bg"], CHIP_STYLES[chip]["tc"], small=True)
         return ""
 
-    # A real table, one row per podium finisher (not one row per race with
-    # 1st/2nd/3rd columns) — Race and Pos use rowspan to merge across a
-    # race's rows / a tied position's rows, and name/pill/points sit inline
-    # on each finisher's own row.
+    # One row per podium finisher, built as CSS-grid rows (same pattern as
+    # the Leaderboard's Standings table) rather than a real <table> with
+    # rowspan — a rowspan'd cell only draws its border under the LAST row of
+    # its span, which left every "continuation" row's gridline broken/partial
+    # under the Race/Pos columns. table-cell borders also render less
+    # reliably at 0.5px on mobile than a plain div border does. Race/Pos text
+    # simply isn't repeated on continuation rows, giving the same "merged"
+    # look without relying on real cell merging for it.
     medal_colors = {"1st": "#FFD700", "2nd": "#C0C0C0", "3rd": "#CD7F32"}
+    pod_grid = "90px 40px minmax(100px,1fr) 64px"
+    pod_min_w = 90 + 40 + 100 + 64 + 10 * 3
 
-    pod_rows = ""
+    all_rows = []   # [(race_html_or_blank, pos_html_or_blank, name, chip_html, pts_txt, filled)]
     for pod in POD:
-        filled = pod["first"] or pod["second"] or pod["third"]
-        row_style = 'opacity:0.5' if not filled else ''
-
-        # Flatten to one entry per finisher-row: (pos_label, name_or_None)
+        filled = bool(pod["first"] or pod["second"] or pod["third"])
         entries = []
         for label, names in (("1st", pod["first"]), ("2nd", pod["second"]), ("3rd", pod["third"])):
             entries.extend((label, name) for name in names) if names else entries.append((label, None))
 
         race_label_html = pod["race"] + (sprint_pill(small=True) if pod.get("is_sprint") else "")
-        total_rows = len(entries)
-        race_cell_written = False
+        race_shown = False
         i = 0
         while i < len(entries):
             label = entries[i][0]
             j = i
             while j < len(entries) and entries[j][0] == label:
                 j += 1
-            group_size = j - i
             for k in range(i, j):
                 _, name = entries[k]
-                cells = ""
-                if not race_cell_written:
-                    cells += (f'<td rowspan="{total_rows}" style="white-space:nowrap;color:#888;'
-                              f'vertical-align:top;border-right:0.5px solid #2a2a2a">{race_label_html}</td>')
-                    race_cell_written = True
-                if k == i:
-                    cells += (f'<td rowspan="{group_size}" style="vertical-align:top;font-weight:600;'
-                              f'color:{medal_colors[label]}">{label}</td>')
+                race_cell = race_label_html if not race_shown else ""
+                race_shown = True
+                pos_cell = (f'<span style="color:{medal_colors[label]};font-weight:600">{label}</span>'
+                            if k == i else "")
                 if name is None:
-                    cells += '<td colspan="2" style="color:#555">TBC</td>'
+                    all_rows.append((race_cell, pos_cell, '<span style="color:#555">TBC</span>', "", filled))
                 else:
                     pts = next((m["scores"].get(pod["race"], "") for m in M if m["name"] == name), "")
                     pts_txt = f'{pts} pts' if pts != "" else "—"
                     pill = get_chip_pill(name, pod["race"])
-                    cells += f'<td style="color:{get_color(name)};font-weight:500;white-space:nowrap">{name}{pill}</td>'
-                    cells += f'<td style="text-align:right;color:#888;font-size:12px;white-space:nowrap">{pts_txt}</td>'
-                pod_rows += f'<tr style="{row_style}">{cells}</tr>'
+                    name_cell = f'<span style="color:{get_color(name)};font-weight:500">{name}{pill}</span>'
+                    all_rows.append((race_cell, pos_cell, name_cell, pts_txt, filled))
             i = j
 
+    pod_rows = ""
+    for idx, (race_cell, pos_cell, name_cell, pts_txt, filled) in enumerate(all_rows):
+        border = "" if idx == len(all_rows) - 1 else "border-bottom:0.5px solid #2a2a2a;"
+        opacity = "opacity:0.5;" if not filled else ""
+        pod_rows += (
+            f'<div style="display:grid;grid-template-columns:{pod_grid};gap:10px;align-items:center;'
+            f'padding:8px 0;{border}{opacity}min-width:{pod_min_w}px">'
+            f'<div style="color:#888;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{race_cell}</div>'
+            f'<div style="font-size:13px">{pos_cell}</div>'
+            f'<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{name_cell}</div>'
+            f'<div style="text-align:right;color:#888;font-size:12px;white-space:nowrap">{pts_txt}</div>'
+            f'</div>'
+        )
+
+    pod_header = (
+        f'<div style="display:grid;grid-template-columns:{pod_grid};gap:10px;padding:4px 0 8px;min-width:{pod_min_w}px">'
+        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Race</div>'
+        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Pos</div>'
+        f'<div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Manager</div>'
+        f'<div style="font-size:9px;color:#555;text-align:right;text-transform:uppercase;letter-spacing:.04em">Points</div>'
+        f'</div>'
+    )
+
     cards_html = f"""<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
-<table class="regret-table" style="min-width:0;margin-bottom:0">
-  <thead><tr>
-    <th>Race</th><th>Pos</th><th>Manager</th><th style="text-align:right">Points</th>
-  </tr></thead>
-  <tbody>{pod_rows}</tbody>
-</table>
+{pod_header}
+{pod_rows}
 </div>"""
 
     # Podium share — same finish_dist the Stats tab uses, not an independent
