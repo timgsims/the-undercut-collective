@@ -210,10 +210,6 @@ def read_database(db_path, season=None):
         rname = race_name_by_round.get(crow["round_taken"])
         if rname:
             chip_race_usage[mname][rname] = crow["chip_name"]
-        # Note: Wildcard's "round taken" consistently comes back as 0 from the
-        # F1 Fantasy API (a quirk on their end, not ours) — round 0 matches no
-        # race, so Wildcard will show in the season summary but won't get a
-        # per-race pill until/unless F1 fixes that field.
     data["chips_used"]      = chips_used
     data["chip_race_usage"] = chip_race_usage
 
@@ -710,11 +706,13 @@ def _global_standing_section(data):
 
     return f"""<div class="section-label">Global standing</div>
 <div class="hint" style="margin-bottom:.5rem">How the league stacks up against every F1 Fantasy player worldwide. NZ rank only appears for players inside F1 Fantasy's public New Zealand top 500 — a "—" means ranked lower than that, not unranked.</div>
-<div class="card">
+<div class="card" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <div style="min-width:520px">
   <div style="display:grid;grid-template-columns:{grid_cols};gap:10px;padding:4px 0 8px;align-items:end">
     <div></div><div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Player</div><div style="font-size:9px;color:#555;text-align:center">Overall rank<br><span style="color:#444">out of {fmt_total(TOTAL_GLOBAL_PLAYERS)}</span></div><div style="font-size:9px;color:#555;text-align:center">NZ rank<br><span style="color:#444">out of {fmt_total(TOTAL_NZ_PLAYERS)}</span></div><div style="font-size:9px;color:#555;text-align:center">Best single race</div>
   </div>
   {rows_html}
+  </div>
 </div>
 <div class="hint">Percentiles are approximate — F1 Fantasy shows "{fmt_total(TOTAL_GLOBAL_PLAYERS)}" global and "{fmt_total(TOTAL_NZ_PLAYERS)}" NZ players rather than an exact count.</div>"""
 
@@ -1715,7 +1713,7 @@ def panel_positions(data):
     )
     min_row_w = 80 + 34 * len(RD) + 80
     header_row = (
-        f'<div style="display:flex;align-items:flex-end;gap:12px;padding:6px 0 4px;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,{min_row_w}px)">'
+        f'<div style="display:flex;align-items:flex-end;gap:12px;padding:6px 0 4px;border-bottom:0.5px solid #2a2a2a">'
         f'<div style="width:10px;flex-shrink:0"></div>'
         f'<div style="min-width:60px;flex-shrink:0"></div>'
         f'<div style="display:flex;gap:6px;flex:1">{header_badges}</div>'
@@ -1759,7 +1757,7 @@ def panel_positions(data):
                 f'</div>'
             )
 
-        rows_html += f"""<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a;min-width:max(100%,{min_row_w}px)">
+        rows_html += f"""<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid #2a2a2a">
   <div style="width:10px;height:10px;border-radius:50%;background:{m['color']};flex-shrink:0"></div>
   <div style="min-width:60px;font-size:13px;font-weight:500;flex-shrink:0">{m['name']}</div>
   <div style="display:flex;gap:6px;flex:1">{race_badges}</div>
@@ -1805,11 +1803,13 @@ def panel_positions(data):
   <div class="mc"><div class="mc-val">{last_race_name}</div><div class="mc-lbl">Most recent race</div></div>
 </div>
 <div class="section-label">Standings movement</div>
-<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div class="card" style="padding:4px 16px">
+<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <div style="min-width:{min_row_w}px">
   {header_row}
   {rows_html}
   <div style="border-bottom:none;padding-bottom:4px"></div>
-</div></div>
+  </div>
+</div>
 <div class="hint" style="margin-bottom:1.5rem">Filled badge = current position. Numbers show overall standings after each race.</div>
 <div class="section-label">Position timeline</div>
 <div style="position:relative;height:360px"><canvas id="posChart"></canvas></div>

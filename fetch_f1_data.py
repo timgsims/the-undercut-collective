@@ -62,8 +62,13 @@ RACE_CALENDAR = [
 ]
 
 # API field names -> the chip names already used throughout the dashboard.
+# Wildcard uses is_wildcard_taken_gd_id, not wildcardtakengd like the other
+# chips — wildcardtakengd consistently comes back as 0 (an F1 API quirk),
+# but is_wildcard_taken_gd_id carries the real round number, confirmed
+# against Tim's own memory (round 5, Canada) and stable across every
+# subsequent round's snapshot.
 CHIP_FIELDS = [
-    ("iswildcardtaken",   "wildcardtakengd",   "Wildcard"),
+    ("iswildcardtaken",   "is_wildcard_taken_gd_id", "Wildcard"),
     ("islimitlesstaken",  "limitlesstakengd",  "Limitless"),
     ("isfinalfixtaken",   "finalfixtakengd",   "Final Fix"),
     ("isextradrstaken",   "extradrstakengd",   "Extra DRS"),
