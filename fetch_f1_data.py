@@ -155,6 +155,12 @@ CREATE TABLE IF NOT EXISTS nz_leaderboard (
     nz_points REAL,
     PRIMARY KEY (season, manager_id)
 );
+CREATE TABLE IF NOT EXISTS round_finalized_at (
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    finalized_at TEXT NOT NULL,
+    PRIMARY KEY (season, round)
+);
 """
 
 
@@ -461,6 +467,18 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
+
+        if is_final:
+            # First-observed timestamp only (INSERT OR IGNORE) — this is what
+            # the sentinel server's hourly pipeline gate uses to know when its
+            # 48-hour "keep tracking after the race, in case scoring is slow
+            # to finalise" window started, per Tim's call. Granularity is
+            # "whichever fetch run first noticed mds==3", not the exact
+            # second F1 finalised it.
+            conn.execute(
+                "INSERT OR IGNORE INTO round_finalized_at (season, round, finalized_at) VALUES (?,?,?)",
+                (SEASON, round_no, datetime.now(timezone.utc).isoformat()),
+            )
 
         conn.execute(
             "DELETE FROM team_picks WHERE season=? AND round=? AND manager_id=?",
