@@ -2862,6 +2862,113 @@ SHARED_CSS = """
   .pop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 1.5rem; }
 """
 
+# ── 09 Driver Results ─────────────────────────────────────────────────────────
+def panel_driver_results(data):
+    """Real driver/constructor performance per race — ranked by their own
+    fantasy points that round (not DRS-doubled, and not the same as F1's own
+    finishing order, which we don't have — this is the closest proxy already
+    used everywhere else in the app) — cross-referenced with which manager(s)
+    had them on their team that race."""
+    M   = data["managers_sorted"]
+    RD  = data["races_done"]
+    drv_results = data.get("driver_results", {})
+    con_results = data.get("constructor_results", {})
+
+    if not RD:
+        return """<div class="subtitle">Driver Results · No races complete yet</div>"""
+
+    # owners_by_race[race_name][player_name] = [{"name":, "color":}, ...] —
+    # a driver/constructor can be owned by more than one manager the same race.
+    owners_by_race = {}
+    for m in M:
+        for rname, picks in m["lineups"].items():
+            for p in picks:
+                owners_by_race.setdefault(rname, {}).setdefault(p["name"], []).append(
+                    {"name": m["name"], "color": m["color"]}
+                )
+
+    def build_rows(results_dict, rname):
+        rows = []
+        for name, races in results_dict.items():
+            r = races.get(rname)
+            if r is None or r.get("pts") is None:
+                continue
+            rows.append({
+                "name":   name,
+                "pts":    r["pts"],
+                "owners": owners_by_race.get(rname, {}).get(name, []),
+            })
+        rows.sort(key=lambda x: -x["pts"])
+        return rows
+
+    driver_results_by_race = {}
+    for race in RD:
+        rname = race["name"]
+        driver_results_by_race[rname] = {
+            "isSprint": bool(race.get("is_sprint", False)),
+            "drivers":  build_rows(drv_results, rname),
+            "cons":     build_rows(con_results, rname),
+        }
+
+    race_opts = "".join(
+        f'<option value="{r["name"]}"{" selected" if r["name"] == RD[-1]["name"] else ""}>{r["name"]}</option>'
+        for r in RD
+    )
+
+    return f"""<div class="subtitle">Driver Results · Who scored what, and who had them</div>
+<div class="hint" style="margin-bottom:12px">Ranked by fantasy points that race (not DRS-doubled) — not necessarily identical to F1's own official finishing order.</div>
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+  <label style="font-size:13px">Race</label>
+  <select id="driverResultsRaceSel">{race_opts}</select>
+</div>
+<div id="driverResultsDisplay"></div>
+<script>
+(function(){{
+const dataByRace={js(driver_results_by_race)};
+const SPRINT_PILL={js(sprint_pill(small=True))};
+const sel=document.getElementById('driverResultsRaceSel');
+const gridCols='34px minmax(110px,1fr) 56px minmax(100px,1.4fr)';
+function ownerHtml(owners){{
+  if(!owners.length)return '<span style="color:#555">—</span>';
+  return owners.map(o=>`<span style="color:${{o.color}};font-weight:500">${{o.name}}</span>`).join(', ');
+}}
+function tableHtml(rows){{
+  const header=`<div style="display:grid;grid-template-columns:${{gridCols}};gap:10px;padding:4px 0 6px">
+    <div></div>
+    <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Name</div>
+    <div style="font-size:9px;color:#555;text-align:right">Pts</div>
+    <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Owned by</div>
+  </div>`;
+  const body=rows.map((r,i)=>{{
+    const ptsColor=r.pts>0?'#4caf50':r.pts<0?'#f44336':'#888';
+    const border=i===rows.length-1?'':'border-bottom:0.5px solid #2a2a2a';
+    return `<div style="display:grid;grid-template-columns:${{gridCols}};gap:10px;align-items:center;padding:7px 0;${{border}}">
+      <div style="color:#888;font-size:12px">${{i+1}}</div>
+      <div style="font-size:13px;font-weight:500">${{r.name}}</div>
+      <div style="text-align:right;font-size:13px;color:${{ptsColor}}">${{r.pts>=0?'+':''}}${{r.pts}}</div>
+      <div style="font-size:12px">${{ownerHtml(r.owners)}}</div>
+    </div>`;
+  }}).join('');
+  return `<div class="card" style="padding:4px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch"><div style="min-width:420px">${{header}}${{body}}</div></div>`;
+}}
+function render(rname){{
+  const d=dataByRace[rname];
+  const el=document.getElementById('driverResultsDisplay');
+  if(!d){{el.innerHTML='';return;}}
+  const sprintPill=d.isSprint?SPRINT_PILL:'';
+  el.innerHTML=`
+    <div class="section-label">Drivers${{sprintPill}}</div>
+    ${{tableHtml(d.drivers)}}
+    <div class="section-label">Constructors</div>
+    ${{tableHtml(d.cons)}}
+  `;
+}}
+sel.addEventListener('change',function(){{render(this.value);}});
+render(sel.value);
+}})();
+</script>"""
+
+
 PANELS = [
     ("🏁 Leaderboard",    "leaderboard", panel_leaderboard),
     ("🗓 Race Breakdown",  "race",        panel_race_breakdown),
@@ -2871,6 +2978,7 @@ PANELS = [
     ("📊 Stats",           "stats",       panel_stats),
     ("📈 Positions",       "positions",   panel_positions),
     ("🧩 Team Picks",      "picks",       panel_picks),
+    # ("🏎 Driver Results",  "drivers",     panel_driver_results),  # still in preview, not approved for the live site yet
 ]
 
 def build_html(data):
@@ -2953,6 +3061,9 @@ try {{
   const t = sessionStorage.getItem('uc-tab');
   if (t && document.getElementById('panel-' + t)) showTab(t, true);
 }} catch(e) {{}}
+if ('serviceWorker' in navigator) {{
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}}
 </script>
 </body>
 </html>"""
