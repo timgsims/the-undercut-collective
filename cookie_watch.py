@@ -35,11 +35,21 @@ from zoneinfo import ZoneInfo
 BASE_DIR = Path(__file__).resolve().parent
 COOKIE_PATH = BASE_DIR / "secrets" / "f1_cookie.txt"
 STATUS_PATH = BASE_DIR / "secrets" / "last_run_status.txt"
+NTFY_TOKEN_PATH = BASE_DIR / "secrets" / "ntfy_token.txt"
 DB_PATH = BASE_DIR / "f1_data.db"
 
 SEASON = 2026
 MAILTO = "timstewart308@outlook.com"
 NZ = ZoneInfo("Pacific/Auckland")
+
+# Push notifications via the self-hosted ntfy at /opt/docker/ntfy.
+# Published through `docker exec` rather than over the network: ntfy follows the
+# house convention of publishing no host ports, so it is only reachable on the
+# `proxy` docker network -- but the phone reaches it via NPM on
+# ntfy.simsey.co.nz. The token is read from secrets/ (gitignored) because this
+# file is committed to a PUBLIC repo.
+NTFY_CONTAINER = "ntfy"
+NTFY_TOPIC_URL = "http://localhost:80/f1-fantasy"
 
 LEAD_HOURS = 36        # start the pre-weekend nag this far before FP1
 NEED_MARGIN_HOURS = 6  # cookie should outlive the race by at least this much
@@ -218,6 +228,39 @@ def send_mail(subject, body):
         return False
 
 
+def send_push(title, message, priority="default", tags="racing_car"):
+    """Push to the phone via ntfy. Best-effort: a push failure must never stop
+    the email going out, since email is the backstop."""
+    if not NTFY_TOKEN_PATH.exists():
+        print("[watch] no ntfy token -- skipping push")
+        return False
+    token = NTFY_TOKEN_PATH.read_text(encoding="utf-8").strip()
+    if not token:
+        print("[watch] ntfy token file empty -- skipping push")
+        return False
+    cmd = ["docker", "exec", NTFY_CONTAINER, "ntfy", "publish",
+           "--token", token, "--title", title,
+           "--priority", priority, "--tags", tags,
+           NTFY_TOPIC_URL, message]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+        if p.returncode != 0:
+            print(f"[watch] ntfy publish failed ({p.returncode}): "
+                  f"{(p.stderr or p.stdout)[:300]}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[watch] ntfy error: {type(e).__name__}: {e}")
+        return False
+
+
+# iOS shows the title prominently, so keep the body short and actionable --
+# the full instructions live in the email.
+PUSH_PRIORITY = {"urgent": ("urgent", "rotating_light"),
+                 "post": ("high", "checkered_flag"),
+                 "pre": ("default", "racing_car")}
+
+
 def throttled(conn, category, now):
     last = state_get(conn, f"last_mail_{category}")
     if not last:
@@ -301,10 +344,14 @@ def main():
     conn = db()
 
     if "--test" in sys.argv:
-        ok = send_mail("F1 cookie watch: test",
-                       "Test from cookie_watch.py on mako-sentinel.")
-        print("test email sent" if ok else "test email FAILED")
-        return 0
+        mailed = send_mail("F1 cookie watch: test",
+                           "Test from cookie_watch.py on mako-sentinel.")
+        print("test email sent" if mailed else "test email FAILED")
+        pushed = send_push("F1 cookie watch",
+                           "Test push from mako-sentinel.",
+                           priority="default", tags="white_check_mark")
+        print("test push sent" if pushed else "test push FAILED")
+        return 0 if (mailed and pushed) else 1
 
     now = datetime.now(timezone.utc)
     _, detail = refresh_calendar(conn)
@@ -338,9 +385,28 @@ def main():
     if throttled(conn, category, now):
         print(f"[watch] throttled (mailed '{category}' within {THROTTLE_HOURS}h)")
         return 0
-    if send_mail(subject, body):
+    # Push and email both go out. Email is the backstop: if ntfy or the phone
+    # is unavailable, the notification still lands somewhere.
+    priority, tags = PUSH_PRIORITY.get(category, ("default", "racing_car"))
+    push_title = subject.replace("[F1] ", "")
+    push_msg = {
+        "urgent": f"Fetch is FAILING during {race['name']}. Scores aren't being "
+                  f"collected. Refresh the cookie.",
+        "post": f"{race['name']} finished but scores aren't final and the "
+                f"cookie is dying. Refresh to capture them.",
+        "pre": f"Cookie expires {nz(exp)}, before {race['name']} finishes. "
+               f"FP1 is {nz(race['fp1'])}. Refresh before then.",
+    }.get(category, subject)
+
+    mailed = send_mail(subject, body)
+    pushed = send_push(push_title, push_msg, priority=priority, tags=tags)
+    print(f"[watch] email={'ok' if mailed else 'FAILED'} "
+          f"push={'ok' if pushed else 'FAILED'}")
+
+    # Throttle on any successful delivery -- otherwise a broken push would
+    # re-send the email every hour.
+    if mailed or pushed:
         state_set(conn, f"last_mail_{category}", now.isoformat())
-        print(f"[watch] emailed {MAILTO}")
     return 0
 
 
