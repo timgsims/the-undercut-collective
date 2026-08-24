@@ -25,6 +25,12 @@ if [ "$fetch_status" -ne 0 ]; then
     echo "fetch_f1_data.py failed (exit $fetch_status) — continuing with last-good f1_data.db."
 fi
 
+# Cookie expiry watch. Emails Tim only around race weekends -- the cookie is a
+# fixed 96h JWT that cannot be auto-renewed (no refresh endpoint; scripted login
+# is blocked by Imperva), so a human has to paste a fresh one periodically.
+# Never allowed to fail the run.
+python3 cookie_watch.py || echo "cookie_watch.py failed (non-fatal)"
+
 if python3 gate_check.py; then
     python3 build_dashboard.py
 else

@@ -182,17 +182,40 @@ def load_cookie():
     return cookie
 
 
+# This box has no global IPv6 route, so a dual-stack host can fail the first
+# connect outright with "[Errno 101] Network is unreachable" instead of falling
+# back to IPv4. On 2026-08-25 that silently dropped Tim's own round-12 data --
+# 7 of 8 managers landed and the run still reported success. Transient network
+# errors are therefore retried rather than given up on after one attempt.
+NET_RETRIES = 3
+NET_BACKOFF_SECONDS = 2
+
+
 def fetch_json(url, cookie):
     req = urllib.request.Request(url, headers={"Cookie": cookie, "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            body = resp.read()
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            return None, "401 Unauthorized (cookie expired or invalid)"
-        return None, f"HTTP {e.code}"
-    except urllib.error.URLError as e:
-        return None, f"Network error: {e.reason}"
+    last_err = None
+    for attempt in range(NET_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = resp.read()
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                # A dead cookie will still be dead next attempt -- don't retry.
+                return None, "401 Unauthorized (cookie expired or invalid)"
+            if 500 <= e.code < 600 and attempt < NET_RETRIES - 1:
+                last_err = f"HTTP {e.code}"
+                time.sleep(NET_BACKOFF_SECONDS * (attempt + 1))
+                continue
+            return None, f"HTTP {e.code}"
+        except urllib.error.URLError as e:
+            last_err = f"Network error: {e.reason}"
+            if attempt < NET_RETRIES - 1:
+                time.sleep(NET_BACKOFF_SECONDS * (attempt + 1))
+                continue
+            return None, last_err
+    else:
+        return None, last_err or "Network error"
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
