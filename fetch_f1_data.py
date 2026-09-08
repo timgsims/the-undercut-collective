@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS race_results (
     team_balance REAL,
     captain_player_id TEXT,
     mega_captain_player_id TEXT,
+    subs_allowed INTEGER,
+    extra_sub_cost REAL,
     is_final INTEGER NOT NULL DEFAULT 0,
     gameday_rank INTEGER,
     overall_rank INTEGER,
@@ -281,6 +283,13 @@ def init_db(conn):
     cols = {row[1] for row in conn.execute("PRAGMA table_info(race_results)")}
     if "mega_captain_player_id" not in cols:
         conn.execute("ALTER TABLE race_results ADD COLUMN mega_captain_player_id TEXT")
+    # Free transfers allowed varies per round (observed 2 and 3), so the extra-
+    # transfer penalty can't be derived from transfers_made alone — store the
+    # API's own allowance and per-transfer cost rather than assuming either.
+    if "subs_allowed" not in cols:
+        conn.execute("ALTER TABLE race_results ADD COLUMN subs_allowed INTEGER")
+    if "extra_sub_cost" not in cols:
+        conn.execute("ALTER TABLE race_results ADD COLUMN extra_sub_cost REAL")
     conn.commit()
 
 
@@ -484,13 +493,14 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
     with conn:
         conn.execute(
             "INSERT INTO race_results (season, round, manager_id, points, season_total, team_value, "
-            "team_balance, captain_player_id, mega_captain_player_id, is_final, gameday_rank, "
-            "overall_rank, transfers_made, "
-            "inactive_driver_penalty, fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "team_balance, captain_player_id, mega_captain_player_id, subs_allowed, extra_sub_cost, "
+            "is_final, gameday_rank, overall_rank, transfers_made, "
+            "inactive_driver_penalty, fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(season, round, manager_id) DO UPDATE SET points=excluded.points, "
             "season_total=excluded.season_total, team_value=excluded.team_value, "
             "team_balance=excluded.team_balance, captain_player_id=excluded.captain_player_id, "
             "mega_captain_player_id=excluded.mega_captain_player_id, "
+            "subs_allowed=excluded.subs_allowed, extra_sub_cost=excluded.extra_sub_cost, "
             "is_final=excluded.is_final, gameday_rank=excluded.gameday_rank, "
             "overall_rank=excluded.overall_rank, transfers_made=excluded.transfers_made, "
             "inactive_driver_penalty=excluded.inactive_driver_penalty, fetched_at=excluded.fetched_at",
@@ -500,6 +510,8 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
                 own_info.get("teamBal"),
                 entry.get("capplayerid"),
                 entry.get("mgcapplayerid"),
+                entry.get("subsallowed"),
+                entry.get("extrasubscost"),
                 int(is_final),
                 entry.get("gdrank"),
                 entry.get("ovrank"),

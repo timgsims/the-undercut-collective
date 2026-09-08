@@ -115,6 +115,9 @@ def read_database(db_path, season=None):
         )
     }
 
+    _has_sub_cols = {"subs_allowed", "extra_sub_cost"} <= {
+        row[1] for row in conn.execute("PRAGMA table_info(race_results)")
+    }
     managers_raw = []
     for mrow in manager_rows:
         mid = mrow["id"]
@@ -122,9 +125,13 @@ def read_database(db_path, season=None):
         global_ranks     = {}   # {race_name: {"gdrank":, "ovrank":}}
         transfers        = {}   # {race_name: count}
         inactive_penalty = {}   # {race_name: points}
+        subs_allowance   = {}   # {race_name: free transfers that round}
+        sub_cost         = {}   # {race_name: points charged per extra transfer}
+        _extra_cols = ", subs_allowed, extra_sub_cost" if _has_sub_cols else ""
         for rr in conn.execute(
             "SELECT round, points, gameday_rank, overall_rank, transfers_made, "
-            "inactive_driver_penalty FROM race_results WHERE season=? AND manager_id=? ORDER BY round",
+            "inactive_driver_penalty" + _extra_cols +
+            " FROM race_results WHERE season=? AND manager_id=? ORDER BY round",
             (season, mid),
         ):
             rname = race_name_by_round.get(rr["round"])
@@ -137,6 +144,11 @@ def read_database(db_path, season=None):
                 transfers[rname] = rr["transfers_made"]
             if rr["inactive_driver_penalty"] is not None:
                 inactive_penalty[rname] = rr["inactive_driver_penalty"]
+            if _has_sub_cols:
+                if rr["subs_allowed"] is not None:
+                    subs_allowance[rname] = rr["subs_allowed"]
+                if rr["extra_sub_cost"] is not None:
+                    sub_cost[rname] = rr["extra_sub_cost"]
 
         total = sum(scores.values())
         avg   = round(total / len(scores), 1) if scores else 0
@@ -150,6 +162,8 @@ def read_database(db_path, season=None):
             "scores": scores,
             "global_ranks":     global_ranks,
             "transfers":        transfers,
+            "subs_allowance":   subs_allowance,
+            "sub_cost":         sub_cost,
             "inactive_penalty": inactive_penalty,
             "nz_rank":          nz_by_manager.get(mid, {}).get("rank"),
             "color":  MANAGER_COLOURS.get(mrow["name"], "#888888"),
@@ -1915,15 +1929,55 @@ def panel_picks(data):
             picks = m["lineups"].get(rname, [])
             if not picks:
                 continue
-            race_pts = sum((p["pts"] or 0) for p in picks)
             chip_by_race = m.get("chip_by_race", {})
             chip_name = chip_by_race.get(rname)
             chip_style = CHIP_STYLES.get(chip_name, {})
+
+            # The card total is the OFFICIAL gameday score, never the sum of the
+            # picks. Effects the picks can't express — extra-transfer charges,
+            # inactive-driver penalties, No Negative / Auto Pilot rescoring —
+            # otherwise silently corrupt a headline number (Italy showed 242 for
+            # a race that officially scored 428). Anything the picks don't
+            # account for is surfaced as an explicit adjustment row instead, so
+            # the card always reconciles even for effects we don't model.
+            picks_sum = sum((p["pts"] or 0) for p in picks)
+            official  = m["scores"].get(rname)
+            race_pts  = official if official is not None else picks_sum
+            adjustments = []
+            if official is not None:
+                delta = official - picks_sum
+                if abs(delta) > 0.001:
+                    subs     = m.get("transfers", {}).get(rname)
+                    allowed  = m.get("subs_allowance", {}).get(rname)
+                    cost     = m.get("sub_cost", {}).get(rname)
+                    inactive = m.get("inactive_penalty", {}).get(rname) or 0
+                    explained = 0
+                    if subs is not None and allowed is not None and cost:
+                        extra = max(0, subs - allowed)
+                        if extra:
+                            pen = -(extra * cost)
+                            adjustments.append({
+                                "label": f"{extra} extra transfer" + ("s" if extra > 1 else ""),
+                                "pts": pen})
+                            explained += pen
+                    if inactive:
+                        adjustments.append({"label": "Inactive driver", "pts": inactive})
+                        explained += inactive
+                    rest = delta - explained
+                    if abs(rest) > 0.001:
+                        # Attribute to the chip when one was played that race
+                        # (No Negative zeroes out negative scores, Auto Pilot
+                        # reassigns DRS), otherwise stay honest about not knowing.
+                        adjustments.append({
+                            "label": chip_name if chip_name else "Scoring adjustment",
+                            "pts": rest})
             teams_by_race[rname].append({
                 "name":      m["name"],
                 "teamName":  m["team"],
                 "color":     m["color"],
                 "racePts":   race_pts,
+                "picksSum":  picks_sum,
+                "adjustments": adjustments,
                 "isFinal":   is_final,
                 "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
                 "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
@@ -2476,6 +2530,17 @@ function showTeam(rname, manName){{
   const totalValueTxt=totalValue>0?`${{totalValue.toFixed(1)}}m`:'—';
   const totalValueChange=t.isFinal?t.picks.reduce((sum,p)=>sum+(p.valueChange||0),0):null;
   const totalChangeTxt=t.isFinal?fmtChange(totalValueChange):'';
+  // Only rendered when the picks alone don't add up to the official score.
+  const adjRows=(t.adjustments||[]).map(a=>{{
+    const c=a.pts>0?'#4caf50':a.pts<0?'#f44336':'#888';
+    const v=a.pts>0?`+${{a.pts}}`:`${{a.pts}}`;
+    return `<div class="adj-row"><span>${{a.label}}</span><span style="color:${{c}}">${{v}} pts</span></div>`;
+  }}).join('');
+  const adjHtml=adjRows?`<div class="adj-box">
+      <div class="adj-row" style="color:#888"><span>Picks subtotal</span><span>${{t.picksSum>=0?'+':''}}${{t.picksSum}} pts</span></div>
+      ${{adjRows}}
+      <div class="adj-row adj-total"><span>Official score</span><span style="color:${{totalColor}}">${{totalTxt}} pts</span></div>
+    </div>`:'';
   document.getElementById('picks-team-display').innerHTML=`
   <div class="team-card" style="margin-bottom:1rem">
     <div class="team-header">
@@ -2494,6 +2559,7 @@ function showTeam(rname, manName){{
     <div class="picks-grid">${{drivers.map(pickCard).join('')}}</div>
     <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Constructors</div>
     <div class="picks-grid">${{cons.map(pickCard).join('')}}</div>
+    ${{adjHtml}}
   </div>`;
 }}
 
@@ -2848,6 +2914,9 @@ SHARED_CSS = """
   .pick-label { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
   .pick-name { font-size: 12px; font-weight: 500; }
   .pick-pts { font-size: 12px; font-weight: 500; margin-top: 3px; }
+  .adj-box { margin-top: 12px; border-top: 0.5px solid #2a2a2a; padding-top: 8px; }
+  .adj-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; padding: 3px 0; color: #bbb; }
+  .adj-total { border-top: 0.5px solid #2a2a2a; margin-top: 4px; padding-top: 6px; font-weight: 600; color: #ddd; }
   .drs-badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 10px; background: #FFD700; color: #7a5800; font-weight: 500; margin-left: 4px; }
   /* trades */
   .trade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 10px; }
