@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS race_results (
     team_value REAL,
     team_balance REAL,
     captain_player_id TEXT,
+    mega_captain_player_id TEXT,
     is_final INTEGER NOT NULL DEFAULT 0,
     gameday_rank INTEGER,
     overall_rank INTEGER,
@@ -273,6 +274,13 @@ def fetch_gameday_statuses(full_guid, cookie):
 
 def init_db(conn):
     conn.executescript(SCHEMA)
+    # The Extra DRS chip boosts a SECOND, separate driver to 3x (API field
+    # mgcapplayerid) on top of the normal 2x capplayerid pick — they are never
+    # the same driver. Added 2026-09-09; CREATE TABLE IF NOT EXISTS will not
+    # add the column to a DB created before that, so migrate explicitly.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(race_results)")}
+    if "mega_captain_player_id" not in cols:
+        conn.execute("ALTER TABLE race_results ADD COLUMN mega_captain_player_id TEXT")
     conn.commit()
 
 
@@ -476,11 +484,13 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
     with conn:
         conn.execute(
             "INSERT INTO race_results (season, round, manager_id, points, season_total, team_value, "
-            "team_balance, captain_player_id, is_final, gameday_rank, overall_rank, transfers_made, "
-            "inactive_driver_penalty, fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "team_balance, captain_player_id, mega_captain_player_id, is_final, gameday_rank, "
+            "overall_rank, transfers_made, "
+            "inactive_driver_penalty, fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(season, round, manager_id) DO UPDATE SET points=excluded.points, "
             "season_total=excluded.season_total, team_value=excluded.team_value, "
             "team_balance=excluded.team_balance, captain_player_id=excluded.captain_player_id, "
+            "mega_captain_player_id=excluded.mega_captain_player_id, "
             "is_final=excluded.is_final, gameday_rank=excluded.gameday_rank, "
             "overall_rank=excluded.overall_rank, transfers_made=excluded.transfers_made, "
             "inactive_driver_penalty=excluded.inactive_driver_penalty, fetched_at=excluded.fetched_at",
@@ -489,6 +499,7 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
                 team_value,
                 own_info.get("teamBal"),
                 entry.get("capplayerid"),
+                entry.get("mgcapplayerid"),
                 int(is_final),
                 entry.get("gdrank"),
                 entry.get("ovrank"),

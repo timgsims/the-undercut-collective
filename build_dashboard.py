@@ -222,6 +222,23 @@ def read_database(db_path, season=None):
             "SELECT round, manager_id, captain_player_id FROM race_results WHERE season=?", (season,)
         )
     }
+    # The Extra DRS chip adds a SECOND boosted driver at 3x, on top of the
+    # normal 2x captain — two different drivers in the same lineup. Only
+    # populated on the round the chip was played. Column-guarded because
+    # run_pipeline.sh still builds from the last-good DB when the fetch fails,
+    # which on an un-migrated DB would otherwise crash the whole build.
+    _rr_cols = {row[1] for row in conn.execute("PRAGMA table_info(race_results)")}
+    if "mega_captain_player_id" in _rr_cols:
+        mega_by_round_manager = {
+            (rr["round"], rr["manager_id"]): rr["mega_captain_player_id"]
+            for rr in conn.execute(
+                "SELECT round, manager_id, mega_captain_player_id FROM race_results WHERE season=?",
+                (season,),
+            )
+            if rr["mega_captain_player_id"]
+        }
+    else:
+        mega_by_round_manager = {}
     # {round: {player_id: gameday_points}} — the driver/constructor's own base
     # score that race, same for every manager who picked them (DRS doubling
     # is applied per-manager below, not baked into this shared source value).
@@ -289,6 +306,7 @@ def read_database(db_path, season=None):
             if not picks_rows:
                 continue
             captain_id = captain_by_round_manager.get((round_no, mid))
+            mega_id = mega_by_round_manager.get((round_no, mid))
             round_points = points_by_round_player.get(round_no, {})
             round_value = value_by_round_player.get(round_no, {})
             round_value_raw = raw_value_by_round_player.get(round_no, {})
@@ -299,9 +317,15 @@ def read_database(db_path, season=None):
             for prow in picks_rows:
                 pid = prow["player_id"]
                 pname, ptype = player_names.get(pid, (None, None))
-                is_drs = (pid == captain_id)
+                is_cap  = (pid == captain_id)
+                is_mega = (mega_id is not None and pid == mega_id)
+                # Verified against the API's own gdpoints for every Extra DRS
+                # use this season (Lori R3, Cain R6, Tim R13): 3x mega + 2x
+                # captain reproduces the official total exactly.
+                mult = 3 if is_mega else (2 if is_cap else 1)
+                is_drs = is_cap or is_mega
                 base_pts = round_points.get(pid)
-                pts = base_pts * 2 if (is_drs and base_pts is not None) else base_pts
+                pts = base_pts * mult if base_pts is not None else base_pts
                 # Fall back to this round's own (lagged) figure when there's no
                 # next round yet to peek at — same reasoning as the team-level
                 # budget fallback: mid-way through the season's most recent
@@ -312,7 +336,7 @@ def read_database(db_path, season=None):
                 picks.append({
                     "name":           pname or f"Unknown #{pid}",
                     "drs":            is_drs,
-                    "drs_marker":     "2X" if is_drs else "",
+                    "drs_marker":     "3X" if is_mega else ("2X" if is_cap else ""),
                     "pts":            pts,
                     "is_constructor": ptype == "constructor",
                     "value":          pick_value,
@@ -321,7 +345,7 @@ def read_database(db_path, season=None):
                 for stype, spts in round_session_points.get(pid, {}).items():
                     if spts is None or not stype:
                         continue
-                    val = spts * 2 if is_drs else spts
+                    val = spts * mult
                     race_session_totals[stype] = race_session_totals.get(stype, 0) + val
             lineups[mname][rname] = picks
             session_points[mname][rname] = race_session_totals
@@ -2437,7 +2461,7 @@ function showTeam(rname, manName){{
     const drsStyle=p.drs?`border-color:${{t.color}};background:${{t.color}}18`:'';
     const drsLabel=p.drsMarker?`<span style="font-size:10px;font-weight:600;color:${{t.color}};margin-left:4px">${{p.drsMarker}}</span>`:'';
     return `<div class="pick" style="${{drsStyle}}">
-      <div class="pick-label">${{p.drs?'<span style="color:'+t.color+'">⚡ DRS</span>':p.isCon?'Constructor':'Driver'}}</div>
+      <div class="pick-label">${{p.drs?'<span style="color:'+t.color+'">⚡ '+(p.drsMarker==='3X'?'EXTRA DRS':'DRS')+'</span>':p.isCon?'Constructor':'Driver'}}</div>
       <div class="pick-name">${{p.name}}${{drsLabel}}</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px">
         <span class="pick-pts" style="color:${{ptsColor}};margin-top:0">${{ptsTxt}} pts</span>
