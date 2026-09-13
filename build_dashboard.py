@@ -382,11 +382,18 @@ def read_database(db_path, season=None):
     data["constructor_results"] = constructor_results
 
     # ── Budget — team value per race, from race_results ───────────────────────
+    # races_finalized, not races_done: a post-race team value is a *result*, so
+    # the rule above applies. While a round is still live F1 Fantasy reports the
+    # previous round's team value as a placeholder, so including it appended a
+    # duplicate of the round before — which made every manager's "Last race"
+    # figure read 0.0m and drew a flat final segment on the timeline (2026 R14
+    # Spain; the one manager it spared was the is_self account, which has no row
+    # for the live round at all).
     budgets = {}
     for mrow in manager_rows:
         mid, mname = mrow["id"], mrow["name"]
         vals = [100.0]  # starting budget
-        for race in data["races_done"]:
+        for race in data["races_finalized"]:
             row = conn.execute(
                 "SELECT team_value FROM race_results WHERE season=? AND round=? AND manager_id=?",
                 (season, race["round"], mid),
@@ -395,7 +402,7 @@ def read_database(db_path, season=None):
                 vals.append(round(row["team_value"], 2))
         budgets[mname] = vals
     data["budgets"]           = budgets
-    data["budget_race_names"] = [r["name"] for r in data["races_done"]]
+    data["budget_race_names"] = [r["name"] for r in data["races_finalized"]]
 
     # Standings-position history is left empty — compute() already falls back
     # to deriving position-per-race from cumulative scores when no explicit
@@ -1525,8 +1532,12 @@ def panel_budget(data):
     hist_min = min(all_budget_values) if all_budget_values else min_b
     y_max = math.ceil((hist_max + 2) / 2) * 2   # next even number at least 2m above highest-ever
     y_min = math.floor((hist_min - 2) / 2) * 2  # next even number at least 2m below lowest-ever
-    y_min = max(80, y_min)   # never go below 80m
-    y_max = min(120, y_max)  # never go above 120m
+    # These guards may only ever *widen* the window. The previous pair
+    # (max(80,…) / min(120,…)) clamped toward the data instead, so once any
+    # team's value passed 120m — 2026 R14 Spain — every line above the
+    # ceiling was silently clipped flat against the top of the chart.
+    y_min = min(y_min, 98)    # always keep the 100m starting line in view
+    y_max = max(y_max, 102)   # keep a sane span early on, when all lines sit at 100m
 
     return f"""<div class="subtitle">Budget Tracker · Team values across the season</div>
 <div class="metric-grid">

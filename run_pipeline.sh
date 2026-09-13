@@ -33,6 +33,16 @@ python3 cookie_watch.py || echo "cookie_watch.py failed (non-fatal)"
 
 if python3 gate_check.py; then
     python3 build_dashboard.py
+    build_status=$?
+    if [ "$build_status" -eq 0 ]; then
+        # Baseline for the retro-correction check, moved forward only on a
+        # build that actually succeeded -- otherwise a failed build would
+        # adopt the corrected numbers as "already published" and the fix
+        # would never reach the site.
+        python3 record_digest.py || echo "record_digest.py failed (non-fatal)"
+    else
+        echo "build_dashboard.py failed (exit $build_status) — points baseline left alone so the next run retries."
+    fi
 else
     echo "Outside the race-weekend tracking window — skipping build/push this run."
 fi
