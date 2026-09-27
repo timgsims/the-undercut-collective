@@ -201,7 +201,7 @@
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">2026 Season · 15/22 races · Updated 27 Sep 2026, 8:19 pm NZT</span>
+      <span class="header-badge">2026 Season · 15/22 races · Updated 27 Sep 2026, 8:35 pm NZT</span>
     </div>
     <nav class="tab-nav">
       <button class="tab-btn active" id="tab-leaderboard" onclick="showTab('leaderboard')">🏁 Leaderboard</button>
@@ -980,13 +980,11 @@ function freezePosYAxis(){
   ctx2.fillStyle='#0f0f0f';
   ctx2.fillRect(0,0,36,cssH);
   const ticks=scale.ticks;
-  const top=scale.top; const bottom=scale.bottom;
-  const range=bottom-top;
-  const vMin=scale.min; const vMax=scale.max;
   ticks.forEach(t=>{
     const v=t.value;
     if(v<1||v>8)return;
-    const yPx=top+((vMax-v)/(vMax-vMin))*range;
+    // Ask the scale itself so labels always match the reversed axis (P1 at top).
+    const yPx=scale.getPixelForValue(v);
     ctx2.fillStyle='#888';
     ctx2.font='11px -apple-system,BlinkMacSystemFont,sans-serif';
     ctx2.textAlign='right';
