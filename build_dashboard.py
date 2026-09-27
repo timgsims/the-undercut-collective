@@ -1861,13 +1861,11 @@ function freezePosYAxis(){{
   ctx2.fillStyle='#0f0f0f';
   ctx2.fillRect(0,0,36,cssH);
   const ticks=scale.ticks;
-  const top=scale.top; const bottom=scale.bottom;
-  const range=bottom-top;
-  const vMin=scale.min; const vMax=scale.max;
   ticks.forEach(t=>{{
     const v=t.value;
     if(v<1||v>{len(M)})return;
-    const yPx=top+((vMax-v)/(vMax-vMin))*range;
+    // Ask the scale itself so labels always match the reversed axis (P1 at top).
+    const yPx=scale.getPixelForValue(v);
     ctx2.fillStyle='#888';
     ctx2.font='11px -apple-system,BlinkMacSystemFont,sans-serif';
     ctx2.textAlign='right';
