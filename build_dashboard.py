@@ -1449,7 +1449,9 @@ def panel_budget(data):
 </div>"""
 
     # Budget timeline chart
-    timeline_labels = b_races[:max(len(m["budgets"]) for m in M)] if M else []
+    # budgets[0] is the pre-season 100.0, so it needs its own label — without
+    # it every point lands one race early and the latest value is dropped.
+    timeline_labels = (["Pre-season"] + b_races)[:max(len(m["budgets"]) for m in M)] if M else []
     timeline_datasets = []
     for i, m in enumerate(M):
         dash = DASH_PATTERNS[i % len(DASH_PATTERNS)]
