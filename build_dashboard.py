@@ -1932,6 +1932,20 @@ def panel_picks(data):
     # ── Per-race JS data ──────────────────────────────────────────────────────
     # teams_by_race: per race, list of manager picks (with pts per pick, DRS flag)
     finalized_names = {r["name"] for r in data["races_finalized"]}
+    # Team-level value change per race, from the official team value — the same
+    # figure the Budget Tracker shows. The per-pick value_change can't be used for
+    # this: it only arrives with the NEXT round's feed, so the latest race summed
+    # to a misleading +0.0 until then. The official team value moves as soon as
+    # prices update. Transfers swap cash for players at the same price, so the
+    # delta is purely the lineup's price moves (matched the pick sums in 108/112
+    # manager-rounds this season; the official figure wins on the rest).
+    team_value_change = {}
+    for m in M:
+        b = m["budgets"]
+        team_value_change[m["name"]] = {
+            rname: round(b[i + 1] - b[i], 2)
+            for i, rname in enumerate(data["budget_race_names"]) if i + 1 < len(b)
+        }
     teams_by_race = {}
     for rname in all_lineup_races:
         teams_by_race[rname] = []
@@ -1990,6 +2004,7 @@ def panel_picks(data):
                 "picksSum":  picks_sum,
                 "adjustments": adjustments,
                 "isFinal":   is_final,
+                "teamValueChange": team_value_change.get(m["name"], {}).get(rname) if is_final else None,
                 "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
                 "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
                                "pts": p["pts"], "isCon": p["is_constructor"],
@@ -2539,8 +2554,7 @@ function showTeam(rname, manName){{
   const totalColor=totalPts>0?'#4caf50':totalPts<0?'#f44336':'#888';
   const totalValue=t.picks.reduce((sum,p)=>sum+(p.value||0),0);
   const totalValueTxt=totalValue>0?`${{totalValue.toFixed(1)}}m`:'—';
-  const totalValueChange=t.isFinal?t.picks.reduce((sum,p)=>sum+(p.valueChange||0),0):null;
-  const totalChangeTxt=t.isFinal?fmtChange(totalValueChange):'';
+  const totalChangeTxt=t.isFinal?fmtChange(t.teamValueChange):'';
   // Only rendered when the picks alone don't add up to the official score.
   const adjRows=(t.adjustments||[]).map(a=>{{
     const c=a.pts>0?'#4caf50':a.pts<0?'#f44336':'#888';
