@@ -311,6 +311,10 @@ def read_database(db_path, season=None):
 
     lineups = {m["name"]: {} for m in managers_raw}
     session_points = {m["name"]: {} for m in managers_raw}   # {race_name: {session_type: total}}
+    limitless_rounds = {(r["manager_id"], r["round_taken"]) for r in conn.execute(
+        "SELECT manager_id, round_taken FROM chips_used WHERE season=? AND chip_name='Limitless'",
+        (season,))}
+    limitless_base_value = {}   # {manager_name: {race_name: real (pre-Limitless) team value}}
     for mrow in manager_rows:
         mid, mname = mrow["id"], mrow["name"]
         for round_no, rname in race_name_by_round.items():
@@ -357,8 +361,23 @@ def read_database(db_path, season=None):
                     race_session_totals[stype] = race_session_totals.get(stype, 0) + val
             lineups[mname][rname] = picks
             session_points[mname][rname] = race_session_totals
+
+            # A Limitless lineup is temporary — the game restores the previous
+            # round's team afterwards, and that is the team whose value counts.
+            # So the Lineup Viewer's team value for a Limitless race is the
+            # previous round's picks at THIS round's (pre-race) prices. Verified
+            # for every Limitless use in 2026 (Jaime/Stu/Tim R2, Cain R15): this
+            # plus team_balance equals the official team value exactly.
+            if (mid, round_no) in limitless_rounds:
+                prev = [r["player_id"] for r in conn.execute(
+                    "SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=?",
+                    (season, round_no - 1, mid))]
+                if prev and all(round_value.get(p) is not None for p in prev):
+                    limitless_base_value.setdefault(mname, {})[rname] = round(
+                        sum(round_value[p] for p in prev), 2)
     data["lineups"] = lineups
     data["session_points"] = session_points
+    data["limitless_base_value"] = limitless_base_value
 
     # driver_results/constructor_results — each player's own (non-doubled)
     # result that race, keyed by name, for the "actual points regardless of
@@ -1999,6 +2018,10 @@ def panel_picks(data):
                 "adjustments": adjustments,
                 "isFinal":   is_final,
                 "teamValueChange": team_value_change.get(m["name"], {}).get(rname) if is_final else None,
+                # Limitless: header shows the real (restored) team's value, and
+                # per-pick price moves are hidden — those drivers were never owned.
+                "limitless": chip_name == "Limitless",
+                "baseValue": data["limitless_base_value"].get(m["name"], {}).get(rname),
                 "chip":      {"label": chip_name, "bg": chip_style.get("bg",""), "tc": chip_style.get("tc","")} if chip_name else None,
                 "picks":     [{"name": p["name"], "drs": p["drs"], "drsMarker": p.get("drs_marker",""),
                                "pts": p["pts"], "isCon": p["is_constructor"],
@@ -2531,7 +2554,7 @@ function showTeam(rname, manName){{
     const ptsTxt=p.pts!=null?(p.pts>=0?`+${{p.pts}}`:`${{p.pts}}`):'–';
     const ptsColor=p.pts==null?'#555':p.pts>0?'#4caf50':p.pts<0?'#f44336':'#888';
     const valueTxt=p.value!=null?`${{p.value.toFixed(1)}}m`:'—';
-    const changeTxt=t.isFinal?fmtChange(p.valueChange):'';
+    const changeTxt=t.isFinal&&!t.limitless?fmtChange(p.valueChange):'';
     const drsStyle=p.drs?`border-color:${{t.color}};background:${{t.color}}18`:'';
     const drsLabel=p.drsMarker?`<span style="font-size:10px;font-weight:600;color:${{t.color}};margin-left:4px">${{p.drsMarker}}</span>`:'';
     return `<div class="pick" style="${{drsStyle}}">
@@ -2546,7 +2569,7 @@ function showTeam(rname, manName){{
   const totalPts=t.racePts;
   const totalTxt=totalPts>=0?`+${{totalPts}}`:`${{totalPts}}`;
   const totalColor=totalPts>0?'#4caf50':totalPts<0?'#f44336':'#888';
-  const totalValue=t.picks.reduce((sum,p)=>sum+(p.value||0),0);
+  const totalValue=t.baseValue!=null?t.baseValue:t.picks.reduce((sum,p)=>sum+(p.value||0),0);
   const totalValueTxt=totalValue>0?`${{totalValue.toFixed(1)}}m`:'—';
   const totalChangeTxt=t.isFinal?fmtChange(t.teamValueChange):'';
   // Only rendered when the picks alone don't add up to the official score.
@@ -2567,7 +2590,7 @@ function showTeam(rname, manName){{
       <div><div class="team-name">${{t.name}}</div><div class="team-sub">${{t.teamName}}</div></div>
       <div style="margin-left:auto;text-align:right">
         <div style="font-size:13px;font-weight:500">${{totalValueTxt}}${{totalChangeTxt}}</div>
-        <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.04em">Team value</div>
+        <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.04em"${{t.baseValue!=null?' title="Limitless lineups are temporary - this is the value of their own team, restored after the race"':''}}>${{t.baseValue!=null?'Own team value':'Team value'}}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-left:12px">
         ${{chipHtml}}
