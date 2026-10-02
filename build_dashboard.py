@@ -258,8 +258,7 @@ def read_database(db_path, season=None):
     # is applied per-manager below, not baked into this shared source value).
     points_by_round_player = {}
     bud_by_round_player = {}
-    value_by_round_player = {}
-    raw_value_by_round_player = {}   # unshifted — fallback for the latest round, see below
+    value_by_round_player = {}   # pre-race price: round N's own feed, NOT shifted
     latest_overall_points = {}   # player_id -> overall_points as of the highest round seen
     latest_value          = {}   # player_id -> absolute price as of the highest round seen
     latest_overall_round  = {}   # player_id -> that round, to track "latest"
@@ -272,11 +271,13 @@ def read_database(db_path, season=None):
         # feed reflects the price move CAUSED BY round N-1, not round N itself
         # (verified: round 11's sum of value_change == Tim's known round-10
         # team budget change, exactly). File it under round N-1 so it lines
-        # up with the race that actually caused it — the absolute value has
-        # the same start-of-gameday-N timing, so it gets the same shift.
+        # up with the race that actually caused it.
+        # The absolute value has the same start-of-gameday-N timing, so round
+        # N's own value is the price going INTO race N — which is what the
+        # Lineup Viewer shows (Tim's call, 2026-10-02: cards show what the team
+        # was worth going into the race, with the race's price move beside it).
         bud_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value_change"]
-        value_by_round_player.setdefault(rr["round"] - 1, {})[rr["player_id"]] = rr["value"]
-        raw_value_by_round_player.setdefault(rr["round"], {})[rr["player_id"]] = rr["value"]
+        value_by_round_player.setdefault(rr["round"], {})[rr["player_id"]] = rr["value"]
 
         if rr["round"] > latest_overall_round.get(rr["player_id"], -1):
             latest_overall_round[rr["player_id"]] = rr["round"]
@@ -323,7 +324,6 @@ def read_database(db_path, season=None):
             mega_id = mega_by_round_manager.get((round_no, mid))
             round_points = points_by_round_player.get(round_no, {})
             round_value = value_by_round_player.get(round_no, {})
-            round_value_raw = raw_value_by_round_player.get(round_no, {})
             round_bud = bud_by_round_player.get(round_no, {})
             round_session_points = session_points_by_round_player.get(round_no, {})
             picks = []
@@ -340,13 +340,7 @@ def read_database(db_path, season=None):
                 is_drs = is_cap or is_mega
                 base_pts = round_points.get(pid)
                 pts = base_pts * mult if base_pts is not None else base_pts
-                # Fall back to this round's own (lagged) figure when there's no
-                # next round yet to peek at — same reasoning as the team-level
-                # budget fallback: mid-way through the season's most recent
-                # race, the lagged value simply doesn't exist yet.
                 pick_value = round_value.get(pid)
-                if pick_value is None:
-                    pick_value = round_value_raw.get(pid)
                 picks.append({
                     "name":           pname or f"Unknown #{pid}",
                     "drs":            is_drs,
