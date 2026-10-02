@@ -56,10 +56,14 @@ RACE_CALENDAR = [
     (1, "Australia"), (2, "China"), (3, "Japan"), (4, "Miami"), (5, "Canada"),
     (6, "Monaco"), (7, "Barcelona"), (8, "Austria"), (9, "Great Britain"),
     (10, "Belgium"), (11, "Hungary"), (12, "Netherlands"), (13, "Italy"),
-    (14, "Spain"), (15, "Azerbaijan"), (16, "Singapore"), (17, "Austin"),
-    (18, "Mexico"), (19, "Brazil"), (20, "Las Vegas"), (21, "Qatar"),
-    (22, "Abu Dhabi"),
+    (14, "Spain"), (15, "Azerbaijan"), (16, "Malaysia"), (17, "Singapore"),
+    (18, "Austin"), (19, "Mexico"), (20, "Brazil"), (21, "Las Vegas"),
+    (22, "Qatar"), (23, "Abu Dhabi"),
 ]
+# Round 16 (the Bahrain GP relocated to Sepang) was added mid-season, pushing
+# everything after it back one — confirmed 2026-10-02 against F1 Fantasy's own
+# feeds/schedule/raceday_en.json (GamedayId 16 = Malaysia, 23 = Abu Dhabi).
+# If the calendar changes again, that feed is the source of truth.
 
 # API field names -> the chip names already used throughout the dashboard.
 # Wildcard uses is_wildcard_taken_gd_id, not wildcardtakengd like the other
@@ -609,10 +613,16 @@ def main():
     # Pass 2: the drivers feed is public and round-scoped (not per-manager) —
     # one call per round gives every driver/constructor's real name, points,
     # and session breakdown for everyone at once.
+    # One round past the latest with points, too: F1 publishes the next round's
+    # feed (new prices + OldPlayerValue) as soon as prices update after a race,
+    # well before that round scores anything. That is where the latest race's
+    # per-pick price moves live — without it the Lineup Viewer's per-pick
+    # changes stay blank until the next race weekend starts. Not existing yet
+    # (e.g. after the final round) is expected, so no warning for it.
     if not fatal:
-        for round_no in range(1, max_round + 1):
+        for round_no in range(1, max_round + 2):
             err = fetch_and_store_drivers(conn, round_no, cookie)
-            if err:
+            if err and round_no <= max_round:
                 print(f"  [warn] drivers feed round {round_no}: {err}")
             time.sleep(0.15)
 
