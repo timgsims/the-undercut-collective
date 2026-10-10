@@ -70,6 +70,56 @@ CHIP_STYLES = {
 
 CHIP_ORDER = ["Limitless", "Wildcard", "Final Fix", "Auto Pilot", "No Negative", "Extra DRS"]
 
+# Budget Tracker's current-budget bars start here, not at 0 (Tim's call --
+# no team gets anywhere near it).
+BUDGET_BAR_FLOOR = 75.0
+
+# Line charts with one x-axis label per race (Points progression, Head-to-Head,
+# Budget timeline). Labels are drawn vertical so each needs only its line
+# height, and autoSkip is off -- at Chart.js's default ~50 degree tilt they
+# needed ~18px each, so by mid-season it silently dropped every second race.
+# Each label gets XCHART_PX of width; once the season outgrows the screen the
+# chart scrolls sideways (opening on the latest race) with its y-axis pinned.
+XCHART_PX = 16
+XCHART_YAXIS_PX = 56
+XCHART_X_TICKS = ("ticks:{color:'#888',autoSkip:false,minRotation:90,"
+                  "maxRotation:90,font:{size:11}}")
+
+
+def xchart_html(canvas_id, n_labels, height):
+    min_w = n_labels * XCHART_PX + XCHART_YAXIS_PX
+    return (f'<div style="position:relative;height:{height}px">'
+            f'<canvas class="ypin" style="position:absolute;top:0;left:0;z-index:2;'
+            f'pointer-events:none;display:none"></canvas>'
+            f'<div class="xscroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;height:100%">'
+            f'<div style="position:relative;height:100%;min-width:{min_w}px">'
+            f'<canvas id="{canvas_id}"></canvas></div></div></div>')
+
+
+# Registered once, globally. For any chart inside a .xscroll that is actually
+# overflowing, copies the y-axis strip of the chart's own canvas (down to the
+# plot bottom, so rotated x labels scroll past freely) onto the
+# .ypin overlay so the axis stays put while the plot scrolls under it.
+XCHART_JS = """
+function xchartPin(chart){
+  const scroller=chart.canvas.closest('.xscroll');
+  if(!scroller||!scroller.clientWidth)return;
+  const pin=scroller.parentNode.querySelector('.ypin');
+  const overflow=scroller.scrollWidth>scroller.clientWidth+1;
+  pin.style.display=overflow?'block':'none';
+  if(!overflow)return;
+  const dpr=chart.currentDevicePixelRatio||1,w=Math.ceil(chart.chartArea.left),h=Math.min(chart.height,Math.ceil(chart.chartArea.bottom)+8);
+  if(pin.width!==w*dpr||pin.height!==h*dpr){
+    pin.width=w*dpr;pin.height=h*dpr;pin.style.width=w+'px';pin.style.height=h+'px';
+  }
+  const c=pin.getContext('2d');
+  c.fillStyle='#0f0f0f';c.fillRect(0,0,pin.width,pin.height);
+  c.drawImage(chart.canvas,0,0,w*dpr,h*dpr,0,0,w*dpr,h*dpr);
+  if(!scroller.dataset.opened){scroller.dataset.opened='1';scroller.scrollLeft=scroller.scrollWidth;}
+}
+Chart.register({id:'xchartPin',afterRender:xchartPin});
+"""
+
 DASH_PATTERNS = [[], [6,2], [2,2], [8,3], [4,2], [6,2,2,2], [3,3], [8,2,2,2], [1,2]]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -455,13 +505,22 @@ def compute(data):
     budget_races    = data["budget_race_names"]
     lineups         = data["lineups"]
 
-    # "Complete" means actually finalized, not just live/in-progress — a race
-    # that's only partway through (points included live per Tim's call on the
-    # season totals) shouldn't count as done until F1 says the whole gameday
-    # is scored.
-    n_done = len(races_finalized)
-    n_total = len(data["races"])
+    # "Complete" (the Races complete / remaining counters) means the grand prix
+    # itself has been scored: F1 Fantasy has marked the Race session done,
+    # which first appears in the hourly build that carries the race's points.
+    # It doesn't wait for finalisation, which can lag the race by a day or two
+    # (Tim's call). Anything declaring a *result* -- podiums, finish positions,
+    # the "Live -- not final" tag -- still waits for races_finalized.
     finalized_names = {r["name"] for r in races_finalized}
+    sessions_by_round = data.get("sessions_by_round", {})
+
+    def race_scored(race):
+        return race["name"] in finalized_names or any(
+            sess["type"] == "Race" and sess["done"]
+            for sess in sessions_by_round.get(race["round"], []))
+
+    n_done = sum(1 for r in data["races"] if race_scored(r))
+    n_total = len(data["races"])
 
     # Sort managers by rank for consistent ordering
     managers_sorted = sorted(managers, key=lambda m: m["rank"])
@@ -1057,7 +1116,7 @@ def panel_leaderboard(data):
 <div class="card">{rows_html}</div>
 <div class="hint">Bar shows points as % of leader's total ({leader} pts)</div>
 <div class="section-label">Points progression</div>
-<div style="position:relative;height:280px"><canvas id="progressChart"></canvas></div>
+{xchart_html("progressChart", len(labels), 280)}
 <div class="legend" id="legend-leaderboard"></div>
 <script>
 (function(){{
@@ -1067,7 +1126,7 @@ new Chart(document.getElementById('progressChart'),{{
   data:{{labels:{js(labels)},datasets:datasets}},
   options:{{responsive:true,maintainAspectRatio:false,
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}} pts`}}}}}},
-    scales:{{x:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+    scales:{{x:{{{XCHART_X_TICKS},grid:{{color:'rgba(255,255,255,0.06)'}}}},
              y:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
 }});
 const leg=document.getElementById('legend-leaderboard');
@@ -1350,7 +1409,7 @@ def panel_h2h(data):
 <div class="section-label">Race by race</div>
 <div class="card" id="race-rows"></div>
 <div class="section-label">Points progression</div>
-<div style="position:relative;height:220px"><canvas id="h2hChart"></canvas></div>
+{xchart_html("h2hChart", len(RD) + 1, 260)}
 <script>
 (function(){{
 const chips={chips_js};
@@ -1423,7 +1482,7 @@ function render(){{
     {{label:nB,data:cumB,borderColor:B.color,backgroundColor:B.color+'22',borderWidth:2.5,pointBackgroundColor:B.color,pointRadius:5,fill:true,tension:0.2}}
   ]}},options:{{responsive:true,maintainAspectRatio:false,
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}} pts`}}}}}},
-    scales:{{x:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},y:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
+    scales:{{x:{{{XCHART_X_TICKS},grid:{{color:'rgba(255,255,255,0.06)'}}}},y:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
   }});
 }}
 render();
@@ -1448,7 +1507,10 @@ def panel_budget(data):
         cur  = m["budget_current"]
         vs   = round(cur - m["budgets"][0], 2) if m["budgets"] else 0
         lc   = m.get("budget_last_change", 0)
-        pct  = round(cur / max_b * 100, 1)
+        # Measured from BUDGET_BAR_FLOOR rather than 0: every budget sits in
+        # roughly 100-130m, so bars from 0 all looked about the same length.
+        pct  = (round(max(cur - BUDGET_BAR_FLOOR, 0) / (max_b - BUDGET_BAR_FLOOR) * 100, 1)
+                if max_b > BUDGET_BAR_FLOOR else 100)
         vs_c = "pos" if vs > 0 else ("neg" if vs < 0 else "neu")
         lc_c = "pos" if lc > 0 else ("neg" if lc < 0 else "neu")
         vs_s = "+" if vs > 0 else ""
@@ -1570,7 +1632,7 @@ def panel_budget(data):
   {rows_html}
 </div>
 <div class="section-label">Budget timeline</div>
-<div style="position:relative;height:280px"><canvas id="budgetChart"></canvas></div>
+{xchart_html("budgetChart", len(timeline_labels), 280)}
 <div class="legend" id="legend-budget"></div>
 <div class="section-label">Budget change per race</div>
 {budget_change_html}
@@ -1581,7 +1643,7 @@ new Chart(document.getElementById('budgetChart'),{{
   data:{{labels:{js(timeline_labels)},datasets:{js(timeline_datasets)}}},
   options:{{responsive:true,maintainAspectRatio:false,
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y.toFixed(1)}}m`}}}}}},
-    scales:{{x:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+    scales:{{x:{{{XCHART_X_TICKS},grid:{{color:'rgba(255,255,255,0.06)'}}}},
              y:{{min:{y_min},max:{y_max},ticks:{{color:'#888',callback:v=>v.toFixed(0)+'m'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
 }});
 document.getElementById('legend-budget').innerHTML={js(legend_html)};
@@ -3164,6 +3226,7 @@ def build_html(data):
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Undercut F1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>{XCHART_JS}</script>
 <style>
 {SHARED_CSS}
 </style>
