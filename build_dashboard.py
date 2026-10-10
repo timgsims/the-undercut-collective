@@ -15,6 +15,7 @@ import os
 import re
 import sqlite3
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -84,6 +85,10 @@ CHIP_ORDER = ["Limitless", "Wildcard", "Final Fix", "Auto Pilot", "No Negative",
 # Budget Tracker's current-budget bars start here, not at 0 (Tim's call --
 # no team gets anywhere near it).
 BUDGET_BAR_FLOOR = 75.0
+
+# A grand prix can't run longer than this from its scheduled start (2h of
+# racing, 3h total including red-flag suspensions).
+RACE_MAX_HOURS = 3
 
 # Line charts with one x-axis label per race (Points progression, Head-to-Head,
 # Budget timeline). Labels are drawn vertical so each needs only its line
@@ -267,6 +272,19 @@ def read_database(db_path, season=None):
             {"type": row["session_type"], "done": bool(row["is_done"])}
         )
     data["sessions_by_round"] = sessions_by_round
+
+    # Scheduled race start per round, from the calendar cookie_watch.py caches.
+    # Used to tell a finished grand prix from one that is merely live.
+    race_start_utc = {}
+    try:
+        for row in conn.execute(
+            "SELECT round, race_utc FROM race_schedule WHERE season=? AND race_utc IS NOT NULL",
+            (season,),
+        ):
+            race_start_utc[row["round"]] = datetime.fromisoformat(row["race_utc"])
+    except sqlite3.OperationalError:
+        pass  # no calendar table yet -- races then only count once finalised
+    data["race_start_utc"] = race_start_utc
 
     n_finish_cols = len(managers_raw)
     data["n_finish_cols"] = n_finish_cols
@@ -619,18 +637,26 @@ def compute(data):
     lineups         = data["lineups"]
 
     # "Complete" (the Races complete / remaining counters) means the grand prix
-    # itself has been scored: F1 Fantasy has marked the Race session done,
-    # which first appears in the hourly build that carries the race's points.
-    # It doesn't wait for finalisation, which can lag the race by a day or two
-    # (Tim's call). Anything declaring a *result* -- podiums, finish positions,
-    # the "Live -- not final" tag -- still waits for races_finalized.
+    # is over and scored, without waiting for finalisation, which can lag the
+    # race by a day or two (Tim's call). A session's "done" flag only means it
+    # has points, and F1 Fantasy posts points LIVE during a session, so that
+    # alone would tick a race over mid-race. It must also be RACE_MAX_HOURS
+    # past the scheduled start: the regulations cap a race at 3 hours
+    # including red-flag suspensions. Anything declaring a *result* (podiums,
+    # finish positions, the "Live -- not final" tag) still waits for
+    # races_finalized.
     finalized_names = {r["name"] for r in races_finalized}
     sessions_by_round = data.get("sessions_by_round", {})
+    race_start_utc = data.get("race_start_utc", {})
+    now_utc = datetime.now(timezone.utc)
 
     def race_scored(race):
-        return race["name"] in finalized_names or any(
-            sess["type"] == "Race" and sess["done"]
-            for sess in sessions_by_round.get(race["round"], []))
+        if race["name"] in finalized_names:
+            return True
+        start = race_start_utc.get(race["round"])
+        has_points = any(sess["type"] == "Race" and sess["done"]
+                         for sess in sessions_by_round.get(race["round"], []))
+        return has_points and start is not None and now_utc >= start + timedelta(hours=RACE_MAX_HOURS)
 
     n_done = sum(1 for r in data["races"] if race_scored(r))
     n_total = len(data["races"])
