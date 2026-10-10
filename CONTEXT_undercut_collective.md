@@ -161,7 +161,7 @@ round: `points`, `season_total`, `team_value`, `team_balance`,
 ## Site structure (tabs, in order)
 
 **No-spoiler mode (added 2026-10-10).** The most recent weekend with any
-points is hidden from each device until it taps "Show <race>" in the amber
+points is hidden (until the next weekend reaches FP1) from each device until it taps "Show <race>" in the amber
 banner under the nav. `build_dashboard.py` writes two pages: `index.html`
 (full) and `prev.html` (the same dashboard built from a copy of the DB with
 that round's results removed, see `spoiler_free_db()`). A script at the top of

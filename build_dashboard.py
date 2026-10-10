@@ -3449,12 +3449,35 @@ def git_push(last_race, repo_dir):
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_pages(data, db_path=DB_PATH):
-    """(index.html, prev.html) for a computed full dataset. With no weekend to
-    hide yet, prev.html is just a redirect back to the dashboard."""
+def next_weekend_started(db_path, season, after_round, now=None):
+    """True once a round later than `after_round` has reached FP1, per the
+    race_schedule calendar cookie_watch.py caches. No calendar -> False."""
+    from datetime import datetime, timezone
+    now = now or datetime.now(timezone.utc)
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT fp1_utc FROM race_schedule WHERE season=? AND round>? AND fp1_utc IS NOT NULL",
+            (season, after_round)).fetchall()
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+    return any(datetime.fromisoformat(r[0]) <= now for r in rows)
+
+
+def build_pages(data, db_path=DB_PATH, now=None):
+    """(index.html, prev.html) for a computed full dataset. The hidden weekend
+    is the latest one with points, until the next weekend reaches FP1 -- by
+    then the old one is no longer a spoiler (Tim, 2026-10-10: hiding Malaysia
+    during the Singapore weekend made no sense). With nothing to hide,
+    prev.html is just a redirect back to the dashboard."""
+    stub = '<!DOCTYPE html><meta http-equiv="refresh" content="0;url=./">'
     if not data["races_done"]:
-        return build_html(data), '<!DOCTYPE html><meta http-equiv="refresh" content="0;url=./">'
+        return build_html(data), stub
     hidden = data["races_done"][-1]
+    if next_weekend_started(db_path, SEASON, hidden["round"], now):
+        return build_html(data), stub
     key = f"{SEASON}-R{hidden['round']}"
     tmp = spoiler_free_db(db_path, SEASON, hidden["round"])
     try:
