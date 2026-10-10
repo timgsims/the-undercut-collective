@@ -160,6 +160,18 @@ round: `points`, `season_total`, `team_value`, `team_balance`,
 
 ## Site structure (tabs, in order)
 
+**No-spoiler mode (added 2026-10-10).** The most recent weekend with any
+points is hidden from each device until it taps "Show <race>" in the amber
+banner under the nav. `build_dashboard.py` writes two pages: `index.html`
+(full) and `prev.html` (the same dashboard built from a copy of the DB with
+that round's results removed, see `spoiler_free_db()`). A script at the top of
+`index.html` redirects unrevealed devices to `prev.html` before anything
+renders. The reveal lives in each device's localStorage (`uc-revealed` =
+`<season>-R<round>`), so the next weekend is hidden again automatically.
+There are no user accounts and nothing is stored server-side. `prev.html`'s
+Team Picks tab also shows each manager's locked-in team for the hidden weekend
+(no points), for checking your line-up while watching a replay.
+
 1. 🏁 Leaderboard — live/latest-race weekend summary box, Standings, points
    progression chart, Global Standing (merged in at the bottom — includes NZ
    rank where available, both with approximate percentiles since F1 doesn't

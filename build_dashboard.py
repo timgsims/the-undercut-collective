@@ -37,6 +37,17 @@ def pause(msg="\nPress Enter to exit..."):
 # The output HTML file (must be index.html for GitHub Pages)
 OUTPUT_FILE = REPO_DIR / "index.html"
 
+# No-spoiler mode. The most recent race weekend with any points is hidden from
+# each device until that device taps "Show results". index.html is the full
+# dashboard; PREV_FILE is the same dashboard built as it stood before that
+# weekend. A tiny script at the top of index.html sends any device that hasn't
+# revealed the weekend to PREV_FILE before anything is drawn. The reveal is
+# remembered per device in localStorage under REVEAL_STORAGE_KEY, keyed by
+# round, so the next weekend is hidden again automatically. Nothing is stored
+# server-side -- there are no user accounts.
+PREV_FILE = REPO_DIR / "prev.html"
+REVEAL_STORAGE_KEY = "uc-revealed"
+
 # Git settings — leave GITHUB_REMOTE blank to skip auto-push
 GITHUB_REMOTE = "origin"   # set to "" to disable auto-push
 COMMIT_MSG_PREFIX = "Update dashboard"  # race name appended automatically
@@ -494,6 +505,108 @@ def rank_with_ties(scored_names):
         rank += len(tied)
         i += len(tied)
     return groups
+
+
+def spoiler_free_db(db_path, season, hidden_round):
+    """Copy of the database as it stood before `hidden_round` started scoring,
+    in a temp file (caller deletes it). Every per-round result from that round
+    on is dropped. Player prices published *for* the hidden round are kept --
+    they're the price going in, set before a wheel turned -- but its points
+    are blanked and season points rolled back a round. The NZ leaderboard is a
+    live single snapshot that already includes the hidden round, so it goes."""
+    import tempfile
+    fd, tmp = tempfile.mkstemp(suffix=".db", prefix="f1_prev_")
+    os.close(fd)
+    src = sqlite3.connect(db_path)
+    dst = sqlite3.connect(tmp)
+    try:
+        src.backup(dst)
+        r = hidden_round
+        for table in ("race_results", "team_picks", "player_session_points",
+                      "session_status", "round_finalized_at"):
+            dst.execute(f"DELETE FROM {table} WHERE season=? AND round>=?", (season, r))
+        dst.execute("DELETE FROM chips_used WHERE season=? AND round_taken>=?", (season, r))
+        dst.execute("DELETE FROM player_results WHERE season=? AND round>?", (season, r))
+        dst.execute(
+            "UPDATE player_results SET gameday_points=NULL, overall_points=("
+            "  SELECT prev.overall_points FROM player_results prev"
+            "  WHERE prev.season=player_results.season AND prev.round=player_results.round-1"
+            "  AND prev.player_id=player_results.player_id"
+            ") WHERE season=? AND round=?", (season, r))
+        dst.execute("DELETE FROM nz_leaderboard WHERE season=?", (season,))
+        dst.commit()
+    finally:
+        dst.close()
+        src.close()
+    return Path(tmp)
+
+
+def weekend_teams(full_data, race_name):
+    """Every manager's locked-in team for the hidden weekend, with nothing that
+    gives away a result: names, DRS boosts, chip and the price going in. No
+    points, no price moves. Shown on prev.html's Team Picks tab so you can
+    check your own line-up while watching a replay."""
+    teams = []
+    for m in full_data["managers_sorted"]:
+        picks = m.get("lineups", {}).get(race_name)
+        if not picks:
+            continue
+        chip = full_data.get("chip_race_usage", {}).get(m["name"], {}).get(race_name)
+        style = CHIP_STYLES.get(chip, {}) if chip else {}
+        teams.append({
+            "name": m["name"], "teamName": m["team"], "color": m["color"],
+            "chip": {"label": chip, "bg": style.get("bg", ""), "tc": style.get("tc", "")} if chip else None,
+            "picks": [{"name": pk["name"], "isCon": pk["is_constructor"], "drs": pk["drs"],
+                       "drsMarker": pk.get("drs_marker", ""), "value": pk.get("value")}
+                      for pk in picks],
+        })
+    return teams
+
+
+def weekend_teams_html(spoiler):
+    teams = spoiler["teams"]
+    if not teams:
+        return ""
+    return f"""<div class="section-label">{spoiler['hidden']} · your team this weekend</div>
+<div class="hint" style="margin-bottom:12px">Locked-in line-ups for {spoiler['hidden']}. No points shown.</div>
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:1rem">
+  <label style="font-size:13px">Manager</label>
+  <select id="wkTeamSel" onchange="ucWeekendTeam(this.value)"></select>
+</div>
+<div id="wk-team-display" style="margin-bottom:1.5rem"></div>
+<script>
+(function(){{
+const teams={js(teams)};
+const sel=document.getElementById('wkTeamSel');
+let saved=null;try{{saved=localStorage.getItem('uc-weekend-manager');}}catch(e){{}}
+teams.forEach(t=>{{const o=document.createElement('option');o.value=t.name;
+  o.textContent=t.name+' \u2014 '+t.teamName;if(t.name===saved)o.selected=true;sel.appendChild(o);}});
+function card(t,p){{
+  const drsStyle=p.drs?`border-color:${{t.color}};background:${{t.color}}18`:'';
+  const lbl=p.drs?`<span style="color:${{t.color}}">⚡ ${{p.drsMarker==='3X'?'EXTRA DRS':'DRS'}}</span>`:(p.isCon?'Constructor':'Driver');
+  const mark=p.drsMarker?`<span style="font-size:10px;font-weight:600;color:${{t.color}};margin-left:4px">${{p.drsMarker}}</span>`:'';
+  const val=p.value!=null?`${{p.value.toFixed(1)}}m`:'';
+  return `<div class="pick" style="${{drsStyle}}"><div class="pick-label">${{lbl}}</div>
+    <div class="pick-name">${{p.name}}${{mark}}</div>
+    <div style="font-size:11px;color:#888;margin-top:3px">${{val}}</div></div>`;
+}}
+window.ucWeekendTeam=function(name){{
+  try{{localStorage.setItem('uc-weekend-manager',name);}}catch(e){{}}
+  const t=teams.find(x=>x.name===name);if(!t)return;
+  const byVal=l=>[...l].sort((a,b)=>(b.value||0)-(a.value||0));
+  const chip=t.chip?`<span class="chip-pill" style="background:${{t.chip.bg}};color:${{t.chip.tc}};margin-left:auto">${{t.chip.label}}</span>`:'';
+  document.getElementById('wk-team-display').innerHTML=
+    `<div class="card"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+       <div class="dot" style="background:${{t.color}}"></div><div style="font-weight:500">${{t.name}}</div>
+       <div style="font-size:12px;color:#888">${{t.teamName}}</div>${{chip}}</div>
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+       ${{byVal(t.picks.filter(p=>!p.isCon)).map(p=>card(t,p)).join('')}}
+       ${{byVal(t.picks.filter(p=>p.isCon)).map(p=>card(t,p)).join('')}}
+     </div></div>`;
+}};
+ucWeekendTeam(sel.value);
+}})();
+</script>"""
 
 
 def compute(data):
@@ -2892,6 +3005,10 @@ SHARED_CSS = """
   ::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 5px; }
   ::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
   .site-header { position: sticky; top: 0; z-index: 200; background: #0f0f0f; border-bottom: 1px solid #1e1e1e; }
+  .spoiler-bar { background: #1f1606; border-top: 1px solid #3a2a00; }
+  .spoiler-inner { max-width: 900px; margin: 0 auto; padding: 6px 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: #ffaa44; }
+  .spoiler-inner button { background: #ffaa44; color: #1f1606; border: 0; border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+  @media (max-width: 600px) { .spoiler-inner { padding: 6px 1rem; } }
   .header-inner { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; }
   .header-top { display: flex; align-items: center; gap: 10px; padding: 10px 0 8px; border-bottom: 1px solid #1a1a1a; }
   .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
@@ -3178,7 +3295,11 @@ PANELS = [
     # ("🏎 Driver Results",  "drivers",     panel_driver_results),  # still in preview, not approved for the live site yet
 ]
 
-def build_html(data):
+def build_html(data, spoiler=None):
+    """spoiler: None (no hidden weekend), or a dict with mode "full" (this is
+    index.html: send unrevealed devices to prev.html) or "prev" (this is the
+    pre-weekend page: banner + Show results, and straight back to index.html
+    for a device that has already revealed)."""
     nd   = data["n_done"]
     nt   = data["n_total"]
     last = data["races_done"][-1]["name"] if data["races_done"] else "Pre-season"
@@ -3209,12 +3330,37 @@ def build_html(data):
             content = fn(data)
         except Exception as e:
             content = f'<div style="padding:2rem;color:#E24B4A">Error generating panel: {e}</div>'
+        if slug == "picks" and spoiler and spoiler["mode"] == "prev":
+            content = weekend_teams_html(spoiler) + content
         panel_divs += f'  <div class="tab-panel{active}" id="panel-{slug}">\n    <div class="panel-body">\n{content}\n    </div>\n  </div>\n\n'
+
+    spoiler_head = ""
+    spoiler_bar = ""
+    if spoiler:
+        key = js(spoiler["key"])
+        store = js(REVEAL_STORAGE_KEY)
+        if spoiler["mode"] == "full":
+            # Before anything renders: unrevealed device -> pre-weekend page.
+            spoiler_head = (f"<script>(function(){{try{{if(localStorage.getItem({store})!=={key})"
+                            f"{{document.documentElement.style.visibility='hidden';"
+                            f"location.replace('prev.html'+location.hash);}}}}catch(e){{}}}})();</script>")
+        else:
+            spoiler_head = (f"<script>(function(){{try{{if(localStorage.getItem({store})==={key})"
+                            f"{{document.documentElement.style.visibility='hidden';"
+                            f"location.replace('./'+location.hash);}}}}catch(e){{}}}})();"
+                            f"function ucReveal(){{if(!confirm({js('Show ' + spoiler['hidden'] + ' results?')}))return;"
+                            f"try{{localStorage.setItem({store},{key});}}catch(e){{}}"
+                            f"location.replace('./'+location.hash);}}</script>")
+            spoiler_bar = (f'<div class="spoiler-bar"><div class="spoiler-inner">'
+                           f'<span>🙈 No-spoiler mode · results to {spoiler["shown_to"]}</span>'
+                           f'<button onclick="ucReveal()">Show {spoiler["hidden"]}</button>'
+                           f'</div></div>')
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+{spoiler_head}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Undercut Collective — F1 Fantasy {SEASON}</title>
 <link rel="manifest" href="manifest.json">
@@ -3242,6 +3388,7 @@ def build_html(data):
     <nav class="tab-nav">
 {tab_buttons}    </nav>
   </div>
+{spoiler_bar}
 </div>
 <div id="tab-content">
 {panel_divs}</div>
@@ -3284,7 +3431,7 @@ def git_push(last_race, repo_dir):
                 raise RuntimeError(result.stderr.strip() or result.stdout.strip())
             return result.stdout.strip()
 
-        run(["git", "add", "index.html"])
+        run(["git", "add", "index.html", "prev.html"])
         run(["git", "commit", "-m", msg])
         run(["git", "push", GITHUB_REMOTE])
         print(f"✅ Pushed to GitHub: '{msg}'")
@@ -3301,6 +3448,25 @@ def git_push(last_race, repo_dir):
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
+
+def build_pages(data, db_path=DB_PATH):
+    """(index.html, prev.html) for a computed full dataset. With no weekend to
+    hide yet, prev.html is just a redirect back to the dashboard."""
+    if not data["races_done"]:
+        return build_html(data), '<!DOCTYPE html><meta http-equiv="refresh" content="0;url=./">'
+    hidden = data["races_done"][-1]
+    key = f"{SEASON}-R{hidden['round']}"
+    tmp = spoiler_free_db(db_path, SEASON, hidden["round"])
+    try:
+        prev = compute(read_database(tmp))
+    finally:
+        tmp.unlink(missing_ok=True)
+    shown_to = prev["races_done"][-1]["name"] if prev["races_done"] else "pre-season"
+    prev_spoiler = {"mode": "prev", "key": key, "hidden": hidden["name"],
+                    "shown_to": shown_to, "teams": weekend_teams(data, hidden["name"])}
+    return (build_html(data, {"mode": "full", "key": key}),
+            build_html(prev, prev_spoiler))
+
 
 def main():
     # Force UTF-8 output on Windows to avoid emoji encoding errors
@@ -3324,10 +3490,11 @@ def main():
     print(f"  Managers: {', '.join(m['name'] for m in data['managers_sorted'])}")
     print()
 
-    html = build_html(data)
-    OUTPUT_FILE.write_text(html, encoding="utf-8")
+    index_html, prev_html = build_pages(data)
+    OUTPUT_FILE.write_text(index_html, encoding="utf-8")
+    PREV_FILE.write_text(prev_html, encoding="utf-8")
     size = OUTPUT_FILE.stat().st_size // 1024
-    print(f"✅ Dashboard written: {OUTPUT_FILE} ({size} KB)")
+    print(f"✅ Dashboard written: {OUTPUT_FILE} ({size} KB) + {PREV_FILE.name}")
     print()
 
     git_push(last, REPO_DIR)
