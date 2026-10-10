@@ -88,6 +88,13 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
   dropped for that rebuild, since there's no prior data to fall back on.
   This has actually happened (Tim's score got wiped once). If you must wipe
   a DB, verify row counts per manager afterward before trusting it.
+- **Backups of `f1_data.db`** (it's gitignored, so git can't restore it):
+  `backup_db.py` runs at the top of every pipeline run, before the fetch,
+  and writes to `/mnt/data/backups/f1-fantasy/` on the HDD, not the OS SSD.
+  `daily/` holds one copy per NZ day (newest 30 kept) and `rounds/` holds
+  one copy per newly finalised round (newest 4 kept). To restore: stop
+  `f1-fantasy-pipeline.timer`, copy a backup over `f1_data.db`, then start
+  the timer. Prefer this over a wipe-and-refetch (see above).
 
 ---
 

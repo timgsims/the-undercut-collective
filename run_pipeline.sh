@@ -19,6 +19,10 @@ cd "$(dirname "$0")" || exit 1
 git fetch origin
 git reset --hard origin/main
 
+# Back up f1_data.db before the fetch touches it (30 daily + last 4 finalised
+# rounds, on /mnt/data). Never allowed to fail the run.
+python3 backup_db.py || echo "backup_db.py failed (non-fatal)"
+
 python3 fetch_f1_data.py
 fetch_status=$?
 if [ "$fetch_status" -ne 0 ]; then
