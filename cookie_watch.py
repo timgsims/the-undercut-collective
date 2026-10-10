@@ -56,6 +56,7 @@ NEED_MARGIN_HOURS = 6  # cookie should outlive the race by at least this much
 POST_GRACE_HOURS = 48  # how long after a race we still care about finalising
 DYING_SOON_HOURS = 6   # "about to die" threshold for the post-race nag
 THROTTLE_HOURS = 20    # at most ~one mail per category per day
+QUIET_HOURS = (0, 6)   # NZ local [start, end): hold alerts overnight
 
 CALENDAR_URL = (f"https://api.jolpi.ca/ergast/f1/{SEASON}/races/"
                 "?format=json&limit=30")
@@ -271,6 +272,11 @@ def throttled(conn, category, now):
         return False
 
 
+def in_quiet_hours(now):
+    start, end = QUIET_HOURS
+    return start <= now.astimezone(NZ).hour < end
+
+
 def nz(dt):
     if dt is None:
         return "unknown"
@@ -384,6 +390,12 @@ def main():
         return 0
     if throttled(conn, category, now):
         print(f"[watch] throttled (mailed '{category}' within {THROTTLE_HOURS}h)")
+        return 0
+    # Quiet hours: hold the alert rather than drop it. Nothing is recorded, so
+    # the first run after quiet hours end (the 6am timer) sends it.
+    if in_quiet_hours(now):
+        print(f"[watch] quiet hours ({QUIET_HOURS[0]:02d}:00-{QUIET_HOURS[1]:02d}:00 "
+              f"NZT) -- holding until {QUIET_HOURS[1]:02d}:00")
         return 0
     # Push and email both go out. Email is the backstop: if ntfy or the phone
     # is unavailable, the notification still lands somewhere.
