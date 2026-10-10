@@ -1088,6 +1088,14 @@ def _global_standing_section(data):
 <div class="hint">Percentiles are approximate — F1 Fantasy shows "{fmt_total(TOTAL_GLOBAL_PLAYERS)}" global and "{fmt_total(TOTAL_NZ_PLAYERS)}" NZ players rather than an exact count.</div>"""
 
 
+def chip_pill_html(chip):
+    """Small chip badge beside a manager's name in the weekend points summary."""
+    if not chip:
+        return ""
+    return (f'<span class="chip-pill" style="background:{chip["bg"]};color:{chip["tc"]};'
+            f'font-size:9px">{chip["label"]}</span>')
+
+
 def _weekend_summary_data(data, races):
     """Build the {race_name: {...}} structure behind the weekend points
     summary table — used by both the Leaderboard's live box and the Race
@@ -1116,9 +1124,13 @@ def _weekend_summary_data(data, races):
             if rname not in m["scores"]:
                 continue
             race_sp = sp.get(m["name"], {}).get(rname, {})
+            chip = data.get("chip_race_usage", {}).get(m["name"], {}).get(rname)
+            chip_style = CHIP_STYLES.get(chip, {}) if chip else {}
             rows.append({
                 "name":     m["name"],
                 "color":    m["color"],
+                "chip":     {"label": chip, "bg": chip_style.get("bg", "#2a2a2a"),
+                             "tc": chip_style.get("tc", "#ccc")} if chip else None,
                 "sessions": [race_sp.get(st) for st in session_types],
                 "total":    m["scores"].get(rname),
             })
@@ -1188,7 +1200,8 @@ def panel_leaderboard(data):
             )
             table_rows += (
                 f'<div style="display:grid;grid-template-columns:{grid_cols};gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #2a2a2a">'
-                f'<div style="font-size:13px;font-weight:500;color:{row["color"]}">{row["name"]}</div>'
+                f'<div style="font-size:13px;font-weight:500;color:{row["color"]};display:flex;align-items:center;flex-wrap:wrap;gap:2px">'
+                f'{row["name"]}{chip_pill_html(row["chip"])}</div>'
                 f'{cells}'
                 f'<div style="text-align:right;font-size:13px;font-weight:600">{row["total"] if row["total"] is not None else "—"}</div>'
                 f'</div>'
@@ -1413,7 +1426,7 @@ function renderWeekendSummary(rname){{
     <div style="font-size:9px;color:#555;text-align:right">Total</div>
   </div>`;
   const rowsHtml=d.rows.map(r=>`<div style="display:grid;grid-template-columns:${{gridCols}};gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #2a2a2a">
-    <div style="font-size:13px;font-weight:500;color:${{r.color}}">${{r.name}}</div>
+    <div style="font-size:13px;font-weight:500;color:${{r.color}};display:flex;align-items:center;flex-wrap:wrap;gap:2px">${{r.name}}${{r.chip?`<span class="chip-pill" style="background:${{r.chip.bg}};color:${{r.chip.tc}};font-size:9px">${{r.chip.label}}</span>`:''}}</div>
     ${{r.sessions.map(v=>`<div style="text-align:right;font-size:13px">${{v===null?'—':v}}</div>`).join('')}}
     <div style="text-align:right;font-size:13px;font-weight:600">${{r.total===null?'—':r.total}}</div>
   </div>`).join('');
