@@ -3347,10 +3347,10 @@ def build_html(data, spoiler=None):
         else:
             spoiler_head = (f"<script>(function(){{try{{if(localStorage.getItem({store})==={key})"
                             f"{{document.documentElement.style.visibility='hidden';"
-                            f"location.replace('./'+location.hash);}}}}catch(e){{}}}})();"
+                            f"location.replace('index.html'+location.hash);}}}}catch(e){{}}}})();"
                             f"function ucReveal(){{if(!confirm({js('Show ' + spoiler['hidden'] + ' results?')}))return;"
                             f"try{{localStorage.setItem({store},{key});}}catch(e){{}}"
-                            f"location.replace('./'+location.hash);}}</script>")
+                            f"location.replace('index.html'+location.hash);}}</script>")
             spoiler_bar = (f'<div class="spoiler-bar"><div class="spoiler-inner">'
                            f'<span>🙈 No-spoiler mode · results to {spoiler["shown_to"]}</span>'
                            f'<button onclick="ucReveal()">Show {spoiler["hidden"]}</button>'
@@ -3472,7 +3472,7 @@ def build_pages(data, db_path=DB_PATH, now=None):
     then the old one is no longer a spoiler (Tim, 2026-10-10: hiding Malaysia
     during the Singapore weekend made no sense). With nothing to hide,
     prev.html is just a redirect back to the dashboard."""
-    stub = '<!DOCTYPE html><meta http-equiv="refresh" content="0;url=./">'
+    stub = '<!DOCTYPE html><meta http-equiv="refresh" content="0;url=index.html">'
     if not data["races_done"]:
         return build_html(data), stub
     hidden = data["races_done"][-1]
