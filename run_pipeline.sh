@@ -19,6 +19,20 @@ cd "$(dirname "$0")" || exit 1
 git fetch origin
 git reset --hard origin/main
 
+# The timer fires every 15 minutes. pipeline_mode.py decides what this run
+# does: "full" about once an hour (everything below, as before), "quick"
+# during a race weekend (a ~10-request fetch that saves stage snapshots for
+# no-spoiler mode, no build), or "skip" (between race weekends).
+mode=$(python3 pipeline_mode.py)
+if [ "$mode" = "skip" ]; then
+    exit 0
+fi
+if [ "$mode" = "quick" ]; then
+    python3 fetch_f1_data.py --quick || echo "quick fetch failed (non-fatal)"
+    exit 0
+fi
+python3 pipeline_mode.py --mark-full
+
 # Back up f1_data.db before the fetch touches it (30 daily + last 4 finalised
 # rounds, on /mnt/data). Never allowed to fail the run.
 python3 backup_db.py || echo "backup_db.py failed (non-fatal)"

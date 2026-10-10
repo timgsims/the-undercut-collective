@@ -103,6 +103,22 @@ CREATE TABLE IF NOT EXISTS player_results (
     value REAL,
     PRIMARY KEY (season, round, player_id)
 );
+-- Each manager's official weekend total as it stood at the end of each scored
+-- stage (session_number) of a round, for no-spoiler mode's stage-by-stage
+-- reveal. F1 Fantasy only ever reports the CURRENT weekend total, so this is
+-- the only record of "the league after qualifying" once the race scores.
+-- Written by record_stage_snapshots(): only the latest scored stage's row is
+-- updated, so each earlier stage keeps its last value from before the next
+-- stage started posting points.
+CREATE TABLE IF NOT EXISTS stage_snapshots (
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    stage INTEGER NOT NULL,
+    manager_id TEXT NOT NULL,
+    points REAL NOT NULL,
+    captured_at TEXT NOT NULL,
+    PRIMARY KEY (season, round, stage, manager_id)
+);
 CREATE TABLE IF NOT EXISTS session_status (
     season INTEGER NOT NULL,
     round INTEGER NOT NULL,
@@ -256,7 +272,7 @@ def gameday_status_url(full_guid):
 
 
 def fetch_gameday_statuses(full_guid, cookie):
-    """Returns (rounds_with_data, rounds_final):
+    """Returns (rounds_with_data, rounds_final, pts_by_round, err):
     - rounds_with_data: any round with a points value at all, including a race
       weekend that's only partway through (e.g. qualifying has posted points
       but the race hasn't run yet) — season totals/standings should include
@@ -265,17 +281,55 @@ def fetch_gameday_statuses(full_guid, cookie):
     - rounds_final: the subset where mds==3, F1 Fantasy's own flag for "this
       gameday's scoring is fully finalised". Podium/race-result declarations
       are gated on this, not on rounds_with_data — a race isn't "won" until
-      it's actually finished, ties included."""
+      it's actually finished, ties included.
+    - pts_by_round: {round: the manager's official points for that round so
+      far} -- the live weekend total, used for stage snapshots."""
     payload, err = fetch_json(gameday_status_url(full_guid), cookie)
     if err:
-        return None, None, err
+        return None, None, None, err
     try:
         md_details = payload["Data"]["Value"]["mdDetails"]
     except (KeyError, TypeError):
-        return None, None, "Unexpected response shape (mdDetails missing)"
+        return None, None, None, "Unexpected response shape (mdDetails missing)"
     with_data = {int(r) for r, info in md_details.items() if info.get("pts") is not None}
     final     = {int(r) for r, info in md_details.items() if info.get("mds") == 3}
-    return with_data, final, None
+    pts       = {int(r): info["pts"] for r, info in md_details.items() if info.get("pts") is not None}
+    return with_data, final, pts, None
+
+
+def record_stage_snapshots(conn, pts_by_manager):
+    """Saves each manager's current weekend total against the latest stage of
+    the latest round that has any points (session_status, refreshed by the
+    drivers feed). Only that one stage's row is ever written, so earlier
+    stages keep the last total seen before the next stage started scoring.
+
+    Call AFTER the drivers feed and with totals fetched BEFORE it: if a new
+    stage starts scoring in between, the older totals land on the new stage's
+    row (harmless, overwritten next run), never the other way round."""
+    row = conn.execute(
+        "SELECT MAX(round) FROM session_status WHERE season=? AND is_done=1", (SEASON,)
+    ).fetchone()
+    rnd = row[0] if row else None
+    if rnd is None:
+        return
+    stage = conn.execute(
+        "SELECT MAX(session_number) FROM session_status WHERE season=? AND round=? AND is_done=1",
+        (SEASON, rnd),
+    ).fetchone()[0]
+    now = datetime.now(timezone.utc).isoformat()
+    saved = 0
+    with conn:
+        for manager_id, pts in pts_by_manager.items():
+            if pts.get(rnd) is None:
+                continue
+            conn.execute(
+                "INSERT INTO stage_snapshots (season, round, stage, manager_id, points, captured_at) "
+                "VALUES (?,?,?,?,?,?) ON CONFLICT(season, round, stage, manager_id) DO UPDATE SET "
+                "points=excluded.points, captured_at=excluded.captured_at",
+                (SEASON, rnd, stage, manager_id, float(pts[rnd]), now),
+            )
+            saved += 1
+    print(f"Stage snapshot: round {rnd} stage {stage} -- {saved} manager total(s) saved.")
 
 
 def init_db(conn):
@@ -574,6 +628,11 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
 
 
 def main():
+    # --quick: race-weekend check between full runs. Only the per-manager
+    # status call (one request each, carrying every round's current points)
+    # plus the current round's drivers feed, then a stage snapshot. ~10
+    # requests, against ~170 for a full run.
+    quick = "--quick" in sys.argv
     cookie = load_cookie()
     conn = sqlite3.connect(DB_PATH)
     init_db(conn)
@@ -586,10 +645,11 @@ def main():
     # overall highest round with anything — needed before the drivers feed
     # (round-scoped, not per-manager) knows how far to fetch.
     manager_rounds = {}   # social_id -> (with_data, final_rounds)
+    manager_pts = {}      # social_id -> {round: current official points}
     max_round = 0
     for name, team_name, social_id, guid_base, is_self in MANAGERS:
         full_guid = f"{guid_base}-0-{social_id}"
-        with_data, final_rounds, err = fetch_gameday_statuses(full_guid, cookie)
+        with_data, final_rounds, pts, err = fetch_gameday_statuses(full_guid, cookie)
         if err:
             if "401" in err:
                 print(f"FATAL: {err} — stopping, no partial data written for remaining managers.")
@@ -599,6 +659,7 @@ def main():
             continue
         time.sleep(0.15)
         manager_rounds[social_id] = (with_data, final_rounds)
+        manager_pts[social_id] = pts
         if with_data:
             max_round = max(max_round, max(with_data))
 
@@ -619,12 +680,32 @@ def main():
     # per-pick price moves live — without it the Lineup Viewer's per-pick
     # changes stay blank until the next race weekend starts. Not existing yet
     # (e.g. after the final round) is expected, so no warning for it.
+    if not fatal and quick:
+        # The round in progress may have no manager points yet (drivers score
+        # first), so also check the round after the latest one with points.
+        for round_no in (max_round, max_round + 1):
+            if round_no < 1:
+                continue
+            err = fetch_and_store_drivers(conn, round_no, cookie)
+            if err and round_no <= max_round:
+                print(f"  [warn] drivers feed round {round_no}: {err}")
+            time.sleep(0.15)
+        record_stage_snapshots(conn, manager_pts)
+        conn.close()
+        STATUS_PATH.write_text(
+            f"OK at {datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
+        print("Quick fetch complete.")
+        return
+
     if not fatal:
         for round_no in range(1, max_round + 2):
             err = fetch_and_store_drivers(conn, round_no, cookie)
             if err and round_no <= max_round:
                 print(f"  [warn] drivers feed round {round_no}: {err}")
             time.sleep(0.15)
+
+    if not fatal:
+        record_stage_snapshots(conn, manager_pts)
 
     # NZ country leaderboard: a public, single-snapshot feed independent of
     # any manager's gameday status. A failure here is non-fatal — it just

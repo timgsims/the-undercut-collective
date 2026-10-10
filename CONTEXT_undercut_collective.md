@@ -88,6 +88,14 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
   dropped for that rebuild, since there's no prior data to fall back on.
   This has actually happened (Tim's score got wiped once). If you must wipe
   a DB, verify row counts per manager afterward before trusting it.
+- **15-minute timer, three run modes (2026-10-10).** `f1-fantasy-pipeline.timer`
+  fires every 15 min and `pipeline_mode.py` picks: `full` (~hourly, the whole
+  pipeline as before), `quick` (race weekends only, FP1-1h to race+8h:
+  `fetch_f1_data.py --quick`, ~10 requests, no build) or `skip`. Both fetch
+  modes call `record_stage_snapshots()`, which saves each manager's official
+  weekend total into `stage_snapshots` against the latest scored stage. That
+  is the only record of the league after each stage, for no-spoiler mode's
+  stage reveal; F1 Fantasy only reports the current total.
 - **Backups of `f1_data.db`** (it's gitignored, so git can't restore it):
   `backup_db.py` runs at the top of every pipeline run, before the fetch,
   and writes to `/mnt/data/backups/f1-fantasy/` on the HDD, not the OS SSD.
