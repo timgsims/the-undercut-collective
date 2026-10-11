@@ -260,7 +260,8 @@ def read_database(db_path, season=None):
     }
     data["races_finalized"] = [r for r in data["races_done"] if final_by_round.get(r["round"])]
 
-    # Session-by-session status (Qualifying/Sprint Qualifying/Sprint/Race) for
+    # Session-by-session status (Qualifying/"Sprint Qualifying", which is F1's
+    # name for the Sprint race -- see session_label()/Race) for
     # whichever race is currently live — powers the "how far through this
     # weekend are we" detail on the live-race box.
     sessions_by_round = {}
@@ -1088,6 +1089,11 @@ def _global_standing_section(data):
 <div class="hint">Percentiles are approximate — F1 Fantasy shows "{fmt_total(TOTAL_GLOBAL_PLAYERS)}" global and "{fmt_total(TOTAL_NZ_PLAYERS)}" NZ players rather than an exact count.</div>"""
 
 
+def session_label(session_type):
+    """F1 Fantasy's session name -> what to show. See _weekend_summary_data."""
+    return "Sprint" if session_type == "Sprint Qualifying" else session_type
+
+
 def chip_pill_html(chip):
     """Small chip badge beside a manager's name in the weekend points summary."""
     if not chip:
@@ -1108,17 +1114,14 @@ def _weekend_summary_data(data, races):
         rname = race["name"]
         sessions = sessions_by_round.get(race["round"], [])
         session_types = [s["type"] for s in sessions if s.get("type")]
-        # F1's own drivers feed doesn't expose Sprint Race points as a
-        # separate line item on a sprint weekend (confirmed against the live
-        # API: only Sprint Qualifying/Qualifying/Race appear, and they sum
-        # exactly to the known total) — so "Race" there is genuinely Sprint
-        # Race + Main Race combined. Label it honestly rather than implying
-        # a breakdown that doesn't exist upstream.
-        is_sprint_weekend = "Sprint Qualifying" in session_types
-        session_labels = [
-            "Sprint + Race" if (is_sprint_weekend and st == "Race") else st
-            for st in session_types
-        ]
+        # F1's drivers feed labels the Sprint RACE "Sprint Qualifying" (sprint
+        # qualifying scores nothing in F1 Fantasy). Confirmed 2026-10-10/11 on
+        # Singapore: that session's points moved live during the Sprint, held
+        # sprint-DNF-sized negatives, and Race stayed empty after the Sprint
+        # and Qualifying had both scored. An earlier comment here assumed the
+        # Sprint was folded into "Race" and labelled it "Sprint + Race"; it
+        # never was. Display names only -- the stored type is left as F1 has it.
+        session_labels = [session_label(st) for st in session_types]
         rows = []
         for m in M:
             if rname not in m["scores"]:
@@ -1139,7 +1142,7 @@ def _weekend_summary_data(data, races):
             "isFinal":       race.get("is_final", False),
             "sessionTypes":  session_types,
             "sessionLabels": session_labels,
-            "sessions":      [{"type": s.get("type"), "done": s.get("done", False)} for s in sessions],
+            "sessions":      [{"type": session_label(s.get("type")), "done": s.get("done", False)} for s in sessions],
             "rows":          rows,
         }
     return result
@@ -1182,7 +1185,7 @@ def panel_leaderboard(data):
             )
             session_html = f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">{pills}</div>'
 
-        grid_cols = "minmax(70px,1fr) " + " ".join(["64px"] * len(d["sessionTypes"])) + " 64px"
+        grid_cols = "minmax(70px,1fr) " + " ".join(["54px"] * len(d["sessionTypes"])) + " 48px"
 
         table_header = (
             f'<div style="display:grid;grid-template-columns:{grid_cols};gap:8px;padding:4px 0 6px;border-bottom:0.5px solid #2a2a2a">'
@@ -1419,7 +1422,7 @@ function renderWeekendSummary(rname){{
   const boxBorder=d.isFinal?'0.5px solid #2a2a2a':'1px solid #ffaa44';
   const titleColor=d.isFinal?'#eee':'#ffaa44';
   const pills=d.sessions.map(s=>`<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${{s.done?'#1a3010':'#2a2a2a'}};color:${{s.done?'#88dd44':'#888'}}">${{s.done?'✓':'…'}} ${{s.type}}</span>`).join('');
-  const gridCols='minmax(70px,1fr) '+d.sessionTypes.map(()=>'64px').join(' ')+' 64px';
+  const gridCols='minmax(70px,1fr) '+d.sessionTypes.map(()=>'54px').join(' ')+' 48px';
   const headHtml=`<div style="display:grid;grid-template-columns:${{gridCols}};gap:8px;padding:4px 0 6px;border-bottom:0.5px solid #2a2a2a">
     <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.04em">Manager</div>
     ${{d.sessionLabels.map(st=>`<div style="font-size:9px;color:#555;text-align:right;white-space:nowrap">${{st}}</div>`).join('')}}
