@@ -525,6 +525,45 @@ def fetch_team_entry(guid_for_url, is_self, team_name, round_no, cookie):
     return entry, None
 
 
+def price_based_team_value(conn, manager_id, round_no):
+    """Post-race team value worked out from public prices, for when round
+    N+1's team_info isn't available yet. Your own next-round team is always
+    readable, but other managers' stay private until that round locks, so
+    without this every opponent showed "no change" for a week after each race.
+
+    Value = the team's picks at round N+1's prices (the post-race-N prices,
+    published once prices update) + its bank balance. On a Limitless round
+    the game restores the previous round's team afterwards, so that team (and
+    its balance) is the one that counts. Checked 2026-10-12 against every
+    official figure on record: all managers for Malaysia, Tim for Singapore,
+    and all five Limitless uses (Jaime/Stu/Tim R2, Cain R15, Lori R16) --
+    exact to 0.1m in every case.
+
+    Returns None if any price isn't published yet."""
+    limitless = conn.execute(
+        "SELECT 1 FROM chips_used WHERE season=? AND manager_id=? AND chip_name='Limitless' AND round_taken=?",
+        (SEASON, manager_id, round_no),
+    ).fetchone()
+    team_round = round_no - 1 if limitless else round_no
+    picks = [r[0] for r in conn.execute(
+        "SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=?",
+        (SEASON, team_round, manager_id))]
+    bal = conn.execute(
+        "SELECT team_balance FROM race_results WHERE season=? AND round=? AND manager_id=?",
+        (SEASON, team_round, manager_id)).fetchone()
+    if not picks or not bal or bal[0] is None:
+        return None
+    total = 0.0
+    for pid in picks:
+        price = conn.execute(
+            "SELECT value FROM player_results WHERE season=? AND round=? AND player_id=?",
+            (SEASON, round_no + 1, pid)).fetchone()
+        if not price or price[0] is None:
+            return None
+        total += price[0]
+    return round(total + bal[0], 1)
+
+
 def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_final):
     """entry = this round's own team data (points/roster/chips).
     budget_entry = round_no+1's team data, used only for its team_info —
@@ -544,7 +583,9 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
     if "maxTeambal" in budget_info:
         team_value = budget_info["maxTeambal"]
     elif "maxTeambal" in own_info:
-        team_value = own_info["maxTeambal"]   # last-race-of-season fallback, one race lagged
+        # One race lagged -- replaced below by price_based_team_value() once
+        # the post-race prices are out (always, for opponents mid-week).
+        team_value = own_info["maxTeambal"]
     else:
         team_value = own_info.get("teamVal")  # very old data / unexpected shape fallback
 
@@ -623,6 +664,14 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
                     "ON CONFLICT(season, manager_id, chip_name) DO UPDATE SET round_taken=excluded.round_taken",
                     (SEASON, social_id, chip_name, entry.get(gd_field)),
                 )
+
+        # Needs this round's picks, chips and balance, so it runs after them.
+        if "maxTeambal" not in budget_info:
+            computed = price_based_team_value(conn, social_id, round_no)
+            if computed is not None:
+                conn.execute(
+                    "UPDATE race_results SET team_value=? WHERE season=? AND round=? AND manager_id=?",
+                    (computed, SEASON, round_no, social_id))
 
     return None
 
