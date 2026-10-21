@@ -31,7 +31,11 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
   "services" endpoints for personal/opponent team data, plus a few fully
   public no-auth "feeds" endpoints for driver data and country leaderboards)
   and writes into `f1_data.db`. Cookie lives at `secrets/f1_cookie.txt`
-  (gitignored, never paste the real cookie into chat).
+  (gitignored, never paste the real cookie into chat). Its 96h session
+  JWTs are re-minted automatically by `renew_cookie.py` (runs before each
+  fetch) from the ~30-day F1 account session inside `login-session`, so a
+  pasted cookie lasts ~30 days; `cookie_watch.py` warns before a race
+  weekend that it won't cover. Paste the new one from an InPrivate login.
 - **`build_dashboard.py`** — reads `f1_data.db`, computes everything
   (standings, podiums, budgets, chips, etc.), and renders the whole site as
   one `index.html` with client-side tab switching (no server-side routing).
