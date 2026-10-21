@@ -2,13 +2,15 @@
 """Email Tim when the F1 session cookie needs refreshing -- but only when it
 actually matters, i.e. around a race weekend.
 
-Background: the F1 cookie is a hard 96-hour JWT. There is no refresh endpoint,
-and automated re-login is blocked by Imperva (both investigated 2026-08-25), so
-a human has to paste a fresh one periodically. Nagging every 4 days would be
-noise: the cookie only needs to be ALIVE around a race weekend. Between races
-nothing is being scored, so an expired cookie is harmless.
+Background: the F1 cookie's session JWTs last 96 hours, but since 2026-10-22
+renew_cookie.py re-mints them from the underlying F1 account session, which
+lasts ~30 days from login. So while renewal is working (secrets/renew_status.txt
+says OK/SKIP), the expiry that matters is that 30-day session's; if renewal is
+failing we fall back to the 96h cookie, exactly as before. Nagging outside race
+weekends would be noise: between races nothing is being scored, so an expired
+cookie is harmless.
 
-Note a hard constraint: 96 hours does NOT stretch from FP1 to race+48h (~4.4
+If renewal is broken, 96 hours does NOT stretch from FP1 to race+48h (~4.4
 days). So we deliberately do not demand one cookie cover a whole weekend --
 we nag at up to two useful moments instead, which is how Tim asked for it:
 
@@ -27,6 +29,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,6 +38,7 @@ from zoneinfo import ZoneInfo
 BASE_DIR = Path(__file__).resolve().parent
 COOKIE_PATH = BASE_DIR / "secrets" / "f1_cookie.txt"
 STATUS_PATH = BASE_DIR / "secrets" / "last_run_status.txt"
+RENEW_STATUS_PATH = BASE_DIR / "secrets" / "renew_status.txt"
 NTFY_TOKEN_PATH = BASE_DIR / "secrets" / "ntfy_token.txt"
 DB_PATH = BASE_DIR / "f1_data.db"
 
@@ -178,33 +182,66 @@ def is_finalized(conn, rnd):
 
 # ---------------------------------------------------------------- cookie
 
-def cookie_expiry():
-    """Earliest expiry among the session JWTs in the cookie file."""
-    if not COOKIE_PATH.exists():
+def jwt_claims(token):
+    parts = token.strip().split(".")
+    if len(parts) < 2:
         return None
+    s = parts[1].replace("-", "+").replace("_", "/")
+    s += "=" * (-len(s) % 4)
+    try:
+        return json.loads(base64.b64decode(s))
+    except Exception:
+        return None
+
+
+def jwt_exp(token):
+    exp = (jwt_claims(token) or {}).get("exp")
+    return datetime.fromtimestamp(exp, timezone.utc) if isinstance(exp, (int, float)) else None
+
+
+def cookie_expiries():
+    """(earliest 96h session-JWT expiry, ~30-day account-session expiry)."""
+    if not COOKIE_PATH.exists():
+        return None, None
     raw = COOKIE_PATH.read_text(encoding="utf-8-sig").strip()
-    best = None
+    best = session = None
     for pair in raw.split(";"):
         if "=" not in pair:
             continue
         name, value = pair.split("=", 1)
-        if name.strip() not in ("login-session", "F1_FANTASY_007"):
+        name, value = name.strip(), value.strip()
+        if name == "login-session":
+            # url-encoded JSON {"data":{"subscriptionToken": <jwt>}}
+            try:
+                value = json.loads(urllib.parse.unquote(urllib.parse.unquote(value)))[
+                    "data"]["subscriptionToken"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            sid = (jwt_claims(value) or {}).get("SessionId")
+            if isinstance(sid, str):
+                session = jwt_exp(sid)
+        elif name != "F1_FANTASY_007":
             continue
-        parts = value.strip().split(".")
-        if len(parts) < 2:
-            continue
-        s = parts[1].replace("-", "+").replace("_", "/")
-        s += "=" * (-len(s) % 4)
-        try:
-            claims = json.loads(base64.b64decode(s))
-        except Exception:
-            continue
-        if "exp" not in claims:
-            continue
-        exp = datetime.fromtimestamp(claims["exp"], timezone.utc)
-        if best is None or exp < best:
+        exp = jwt_exp(value)
+        if exp and (best is None or exp < best):
             best = exp
-    return best
+    return best, session
+
+
+def renewal_working():
+    if not RENEW_STATUS_PATH.exists():
+        return False
+    word = RENEW_STATUS_PATH.read_text(encoding="utf-8", errors="replace").split(" ", 1)[0]
+    return word in ("OK", "SKIP")
+
+
+def cookie_expiry():
+    """When a human next has to paste a cookie: the ~30-day account session
+    while renew_cookie.py is working, else the 96h cookie itself."""
+    short, session = cookie_expiries()
+    if renewal_working() and session is not None:
+        return session
+    return short
 
 
 def last_run_failed():
@@ -283,16 +320,18 @@ def nz(dt):
     return dt.astimezone(NZ).strftime("%a %d %b %Y, %I:%M %p NZT").replace(" 0", " ")
 
 
-REFRESH_HOWTO = """How to refresh (about 60 seconds):
-  1. Open https://fantasy.formula1.com in your browser, logged in.
+REFRESH_HOWTO = """How to refresh (a couple of minutes, or ask Claude to walk you through it):
+  1. Open an InPrivate window (Ctrl+Shift+N) -- a normal re-login reuses the
+     old session and buys nothing -- and log in at https://fantasy.formula1.com
   2. F12 -> Network tab -> filter box: services/user
-  3. Click any 200 row -> Headers -> Request Headers ->
-     right-click "Cookie:" -> Copy value.
+  3. Right-click a row with status 200 -> Copy -> Copy as cURL, and take the
+     cookie string out of its -b "..." part (don't copy the Cookie: header
+     from the Headers pane: DevTools truncates it).
   4. From your PC:
        ssh sentinel-admin@100.69.34.6 'cat > /home/sentinel-admin/f1-fantasy/secrets/f1_cookie.txt'
      paste, press Enter, then Ctrl+D.
 
-That buys another 96 hours."""
+The pipeline renews it automatically from then on, for about 30 days."""
 
 
 # ---------------------------------------------------------------- main
@@ -338,9 +377,7 @@ def decide(conn, now, race, exp, failed):
                 f"  FP1           : {nz(race['fp1'])}\n"
                 f"  race          : {nz(race['race'])}\n"
                 f"  cookie expires: {nz(exp)}\n\n"
-                f"Refresh any time before FP1 and the weekend is covered. "
-                f"(A cookie only lasts 96h, so if the round is slow to "
-                f"finalise you may get one more nudge after the race.)\n\n"
+                f"Refresh any time before FP1 and the weekend is covered.\n\n"
                 f"{REFRESH_HOWTO}\n")
 
     return (None, None, None)
@@ -375,7 +412,8 @@ def main():
     print(f"[watch]   FP1        {nz(race['fp1'])}")
     print(f"[watch]   race       {nz(race['race'])}")
     print(f"[watch]   finalised  {is_finalized(conn, race['round'])}")
-    print(f"[watch]   cookie exp {nz(exp)}")
+    print(f"[watch]   cookie exp {nz(exp)} ("
+          f"{'account session, auto-renewing' if renewal_working() else '96h cookie, renewal not working'})")
     print(f"[watch]   last run   {'FAILED' if failed else 'ok'}")
 
     category, subject, body = decide(conn, now, race, exp, failed)

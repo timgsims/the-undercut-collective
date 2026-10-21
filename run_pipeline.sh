@@ -37,16 +37,21 @@ python3 pipeline_mode.py --mark-full
 # rounds, on /mnt/data). Never allowed to fail the run.
 python3 backup_db.py || echo "backup_db.py failed (non-fatal)"
 
+# Re-mint the 96h session cookie from the ~30-day F1 account session before
+# fetching (no-op unless it has <48h left or the last fetch failed). Exit 2
+# means the account session is dead and a human must paste a fresh cookie --
+# cookie_watch.py handles telling Tim. Never allowed to fail the run.
+python3 renew_cookie.py || echo "renew_cookie.py failed (exit $?, non-fatal)"
+
 python3 fetch_f1_data.py
 fetch_status=$?
 if [ "$fetch_status" -ne 0 ]; then
     echo "fetch_f1_data.py failed (exit $fetch_status) — continuing with last-good f1_data.db."
 fi
 
-# Cookie expiry watch. Emails Tim only around race weekends -- the cookie is a
-# fixed 96h JWT that cannot be auto-renewed (no refresh endpoint; scripted login
-# is blocked by Imperva), so a human has to paste a fresh one periodically.
-# Never allowed to fail the run.
+# Cookie expiry watch. Emails Tim only around race weekends, when the ~30-day
+# account session behind the cookie (or the 96h cookie itself, if renewal is
+# failing) won't last. Never allowed to fail the run.
 python3 cookie_watch.py || echo "cookie_watch.py failed (non-fatal)"
 
 if python3 gate_check.py; then
