@@ -1,3 +1,11 @@
 secrets/
 __pycache__/
 f1_data.db
+
+# Local-only working files (the repo is public via GitHub Pages)
+*.xlsx
+*.xml
+*.psd
+*.zip
+Development.txt
+.claude/
