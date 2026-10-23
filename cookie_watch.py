@@ -60,6 +60,8 @@ NEED_MARGIN_HOURS = 6  # cookie should outlive the race by at least this much
 POST_GRACE_HOURS = 48  # how long after a race we still care about finalising
 DYING_SOON_HOURS = 6   # "about to die" threshold for the post-race nag
 THROTTLE_HOURS = 20    # at most ~one mail per category per day
+NET_FAIL_RUNS = 2      # network-only failures must repeat this many full runs
+                       # in a row before alerting (one DNS blip isn't news)
 QUIET_HOURS = (0, 6)   # NZ local [start, end): hold alerts overnight
 
 CALENDAR_URL = (f"https://api.jolpi.ca/ergast/f1/{SEASON}/races/"
@@ -244,10 +246,22 @@ def cookie_expiry():
     return short
 
 
-def last_run_failed():
+def last_run_failure():
+    """None if the last fetch was OK, else (reason, detail). reason is
+    "auth", "network" or "other" (also "other" for a status file written
+    before fetch_f1_data.py recorded reasons)."""
     if not STATUS_PATH.exists():
-        return False
-    return STATUS_PATH.read_text(encoding="utf-8", errors="replace").startswith("FAILED")
+        return None
+    text = STATUS_PATH.read_text(encoding="utf-8", errors="replace").strip()
+    if not text.startswith("FAILED"):
+        return None
+    reason, detail = "other", ""
+    if " reason=" in text:
+        rest = text.split(" reason=", 1)[1]
+        reason = rest.split(" ", 1)[0] or "other"
+        if " detail=" in rest:
+            detail = rest.split(" detail=", 1)[1]
+    return reason, detail
 
 
 # ---------------------------------------------------------------- email
@@ -295,6 +309,7 @@ def send_push(title, message, priority="default", tags="racing_car"):
 # iOS shows the title prominently, so keep the body short and actionable --
 # the full instructions live in the email.
 PUSH_PRIORITY = {"urgent": ("urgent", "rotating_light"),
+                 "network": ("high", "warning"),
                  "post": ("high", "checkered_flag"),
                  "pre": ("default", "racing_car")}
 
@@ -336,22 +351,50 @@ The pipeline renews it automatically from then on, for about 30 days."""
 
 # ---------------------------------------------------------------- main
 
-def decide(conn, now, race, exp, failed):
-    """Returns (category, subject, body) or (None, None, None)."""
+def decide(conn, now, race, exp, failure, net_streak=0):
+    """Returns (category, subject, body) or (None, None, None).
+    failure is last_run_failure()'s result; net_streak counts consecutive
+    full runs whose fetch failed with network errors only."""
     dead = exp is None or exp <= now
     need_by = race["race"] + timedelta(hours=NEED_MARGIN_HOURS)
     covers_race = exp is not None and exp >= need_by
     finalized = is_finalized(conn, race["round"])
     name = race["name"]
 
-    # urgent: fetching is actually broken while the weekend is under way
-    if failed and race["fp1"] - timedelta(hours=LEAD_HOURS) <= now:
-        return ("urgent",
-                f"[F1] Fetch FAILING during {name} weekend - refresh cookie",
-                f"The hourly fetch is failing during the {name} weekend, so "
-                f"scores are not being collected.\n\n"
+    in_weekend = race["fp1"] - timedelta(hours=LEAD_HOURS) <= now
+    reason, detail = failure if failure else (None, "")
+
+    # network: Sentinel can't reach F1 at all. Not the cookie, so don't tell
+    # Tim to refresh it, and stay quiet until it has repeated.
+    if reason == "network" and in_weekend:
+        if net_streak < NET_FAIL_RUNS:
+            return (None, None, None)
+        return ("network",
+                f"[F1] Fetch failing during {name} weekend - network/DNS, not the cookie",
+                f"The fetch has failed {net_streak} full runs in a row during "
+                f"the {name} weekend because Sentinel can't reach F1 "
+                f"(network/DNS error). The cookie is not the problem; "
+                f"there is nothing to refresh.\n\n"
+                f"  error         : {detail}\n"
                 f"  cookie expiry : {nz(exp)}\n"
-                f"  last fetch    : FAILED\n"
+                f"  race          : {nz(race['race'])}\n\n"
+                f"Check Sentinel's DNS (Unbound) and internet connection. "
+                f"The pipeline retries every run and catches up by itself "
+                f"once the network is back.\n")
+
+    # urgent: fetching is actually broken while the weekend is under way
+    if reason in ("auth", "other") and in_weekend:
+        if reason == "auth":
+            subject = f"[F1] Cookie rejected during {name} weekend - refresh cookie"
+            lead = "F1 is rejecting the cookie (401)"
+        else:
+            subject = f"[F1] Fetch FAILING during {name} weekend - check cookie"
+            lead = "The fetch is failing (not a plain network error)"
+        return ("urgent", subject,
+                f"{lead} during the {name} weekend, so scores are not being "
+                f"collected.\n\n"
+                f"  error         : {detail or 'unknown'}\n"
+                f"  cookie expiry : {nz(exp)}\n"
                 f"  race          : {nz(race['race'])}\n\n"
                 f"{REFRESH_HOWTO}\n")
 
@@ -406,7 +449,13 @@ def main():
         return 0
 
     exp = cookie_expiry()
-    failed = last_run_failed()
+    failure = last_run_failure()
+    # Consecutive network-only failures across full runs (this script runs
+    # once per full run, right after the fetch).
+    net_streak = int(state_get(conn, "net_fail_streak") or 0)
+    net_streak = net_streak + 1 if failure and failure[0] == "network" else 0
+    if "--status" not in sys.argv:
+        state_set(conn, "net_fail_streak", str(net_streak))
 
     print(f"[watch] race     R{race['round']} {race['name']}")
     print(f"[watch]   FP1        {nz(race['fp1'])}")
@@ -414,9 +463,13 @@ def main():
     print(f"[watch]   finalised  {is_finalized(conn, race['round'])}")
     print(f"[watch]   cookie exp {nz(exp)} ("
           f"{'account session, auto-renewing' if renewal_working() else '96h cookie, renewal not working'})")
-    print(f"[watch]   last run   {'FAILED' if failed else 'ok'}")
+    if failure:
+        print(f"[watch]   last run   FAILED ({failure[0]}: {failure[1]})"
+              + (f", network streak {net_streak}" if failure[0] == "network" else ""))
+    else:
+        print("[watch]   last run   ok")
 
-    category, subject, body = decide(conn, now, race, exp, failed)
+    category, subject, body = decide(conn, now, race, exp, failure, net_streak)
 
     if category is None:
         print("[watch] decision: silent")
@@ -440,8 +493,15 @@ def main():
     priority, tags = PUSH_PRIORITY.get(category, ("default", "racing_car"))
     push_title = subject.replace("[F1] ", "")
     push_msg = {
-        "urgent": f"Fetch is FAILING during {race['name']}. Scores aren't being "
-                  f"collected. Refresh the cookie.",
+        "urgent": (f"F1 rejected the cookie during {race['name']}. Scores aren't "
+                   f"being collected. Refresh the cookie."
+                   if failure and failure[0] == "auth" else
+                   f"Fetch is FAILING during {race['name']} "
+                   f"({(failure or ('', ''))[1] or 'unknown error'}). "
+                   f"Check the cookie."),
+        "network": f"Fetch failing during {race['name']}: Sentinel can't reach F1 "
+                   f"(network/DNS). Not the cookie, nothing to refresh. "
+                   f"It catches up once the network is back.",
         "post": f"{race['name']} finished but scores aren't final and the "
                 f"cookie is dying. Refresh to capture them.",
         "pre": f"Cookie expires {nz(exp)}, before {race['name']} finishes. "

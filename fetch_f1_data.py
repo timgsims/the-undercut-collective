@@ -689,6 +689,11 @@ def main():
     seed_races(conn)
 
     fatal = False
+    # Why the run failed, for cookie_watch.py: "auth" (401, the cookie),
+    # "network" (DNS/connect errors only, e.g. Sentinel's resolver dropping
+    # lookups on 2026-10-23) or "other". Only meaningful when fatal.
+    fail_reason, fail_detail = "other", ""
+    pass1_errors = []
 
     # Pass 1: figure out which rounds have data at all, per manager, and the
     # overall highest round with anything — needed before the drivers feed
@@ -703,7 +708,9 @@ def main():
             if "401" in err:
                 print(f"FATAL: {err} — stopping, no partial data written for remaining managers.")
                 fatal = True
+                fail_reason, fail_detail = "auth", err
                 break
+            pass1_errors.append(err)
             print(f"  [warn] {name}: couldn't get gameday status ({err}), skipping this run")
             continue
         time.sleep(0.15)
@@ -719,6 +726,9 @@ def main():
     if not fatal and not manager_rounds:
         print("FATAL: no manager's gameday status could be fetched this run (see warnings above).")
         fatal = True
+        if pass1_errors and all(e.startswith("Network error") for e in pass1_errors):
+            fail_reason = "network"
+        fail_detail = pass1_errors[0] if pass1_errors else ""
 
     # Pass 2: the drivers feed is public and round-scoped (not per-manager) —
     # one call per round gives every driver/constructor's real name, points,
@@ -810,6 +820,7 @@ def main():
                 if "401" in err:
                     print(f"FATAL: {err} — stopping, no partial data written for remaining rounds/managers.")
                     fatal = True
+                    fail_reason, fail_detail = "auth", err
                     break
                 print(f"  [warn] {name} round {round_no}: {err}")
                 continue
@@ -830,10 +841,15 @@ def main():
 
     conn.close()
 
-    STATUS_PATH.write_text(
-        f"{'FAILED' if fatal else 'OK'} at {datetime.now(timezone.utc).isoformat()}\n",
-        encoding="utf-8",
-    )
+    # Format: "FAILED at <iso> reason=<auth|network|other> detail=<first error>".
+    # renew_cookie.py and cookie_watch.py only rely on the leading word.
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if fatal:
+        detail = " ".join(fail_detail.split())[:200]
+        status = f"FAILED at {now_iso} reason={fail_reason} detail={detail}"
+    else:
+        status = f"OK at {now_iso}"
+    STATUS_PATH.write_text(status + "\n", encoding="utf-8")
 
     if fatal:
         sys.exit(1)
