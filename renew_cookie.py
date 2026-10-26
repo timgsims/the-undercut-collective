@@ -134,7 +134,14 @@ def retrieve_subscription_token(sid):
                  "cd-sessionid": sid, "orderSubmitted": "true"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            data = json.loads(r.read()).get("data") or {}
+            reply = json.loads(r.read())
+        data = reply.get("data") or {}
+        # F1 can end the session before the SessionId's own exp: a 200 with
+        # {"Fault": {"Code": 109, "Message": "Session expired"}} (seen 2026-10-25,
+        # exp said 11-09). Same as a 401: only a fresh pasted cookie fixes it.
+        fault = reply.get("Fault") or {}
+        if not data and (fault.get("Code") == 109 or "expired" in str(fault.get("Message", "")).lower()):
+            return None, "session_rejected"
     except urllib.error.HTTPError as e:
         # 401/403 = the account session itself is dead or revoked
         return None, ("session_rejected" if e.code in (401, 403) else f"HTTP {e.code}")

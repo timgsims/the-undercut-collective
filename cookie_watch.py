@@ -39,21 +39,16 @@ BASE_DIR = Path(__file__).resolve().parent
 COOKIE_PATH = BASE_DIR / "secrets" / "f1_cookie.txt"
 STATUS_PATH = BASE_DIR / "secrets" / "last_run_status.txt"
 RENEW_STATUS_PATH = BASE_DIR / "secrets" / "renew_status.txt"
-NTFY_TOKEN_PATH = BASE_DIR / "secrets" / "ntfy_token.txt"
 DB_PATH = BASE_DIR / "f1_data.db"
 
 SEASON = 2026
 MAILTO = "timstewart308@outlook.com"
 NZ = ZoneInfo("Pacific/Auckland")
 
-# Push notifications via the self-hosted ntfy at /opt/docker/ntfy.
-# Published through `docker exec` rather than over the network: ntfy follows the
-# house convention of publishing no host ports, so it is only reachable on the
-# `proxy` docker network -- but the phone reaches it via NPM on
-# ntfy.simsey.co.nz. The token is read from secrets/ (gitignored) because this
-# file is committed to a PUBLIC repo.
-NTFY_CONTAINER = "ntfy"
-NTFY_TOPIC_URL = "http://localhost:80/f1-fantasy"
+# Push notifications go through HomeLab (since 2026-10-26; ntfy before that):
+# ~/hl-notify.py on the server drops the message in HomeLab's notices folder and
+# HomeLab sends it to Tim's phone as an app notification. No secret needed here.
+HL_NOTIFY = Path.home() / "hl-notify.py"
 
 LEAD_HOURS = 36        # start the pre-weekend nag this far before FP1
 NEED_MARGIN_HOURS = 6  # cookie should outlive the race by at least this much
@@ -281,28 +276,26 @@ def send_mail(subject, body):
 
 
 def send_push(title, message, priority="default", tags="racing_car"):
-    """Push to the phone via ntfy. Best-effort: a push failure must never stop
-    the email going out, since email is the backstop."""
-    if not NTFY_TOKEN_PATH.exists():
-        print("[watch] no ntfy token -- skipping push")
+    """Push to the phone via HomeLab. Best-effort: a push failure must never stop
+    the email going out, since email is the backstop. False if HomeLab isn't
+    answering (the notice is still queued and goes once it's back that day)."""
+    if not HL_NOTIFY.exists():
+        print(f"[watch] no {HL_NOTIFY} -- skipping push")
         return False
-    token = NTFY_TOKEN_PATH.read_text(encoding="utf-8").strip()
-    if not token:
-        print("[watch] ntfy token file empty -- skipping push")
-        return False
-    cmd = ["docker", "exec", NTFY_CONTAINER, "ntfy", "publish",
-           "--token", token, "--title", title,
-           "--priority", priority, "--tags", tags,
-           NTFY_TOPIC_URL, message]
+    level = {"min": 1, "low": 2, "default": 3, "high": 4, "urgent": 5}.get(priority, 3)
+    cmd = ["python3", str(HL_NOTIFY), "--source", "f1", "--title", title,
+           "--body", message, "--priority", str(level), "--tags", tags,
+           "--click", "https://f1fantasy.simsey.co.nz/"]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if p.returncode != 0:
-            print(f"[watch] ntfy publish failed ({p.returncode}): "
+            what = "queued, but HomeLab isn't answering" if p.returncode == 2 else "failed"
+            print(f"[watch] hl-notify {what} ({p.returncode}): "
                   f"{(p.stderr or p.stdout)[:300]}")
             return False
         return True
     except Exception as e:
-        print(f"[watch] ntfy error: {type(e).__name__}: {e}")
+        print(f"[watch] hl-notify error: {type(e).__name__}: {e}")
         return False
 
 
@@ -488,7 +481,7 @@ def main():
         print(f"[watch] quiet hours ({QUIET_HOURS[0]:02d}:00-{QUIET_HOURS[1]:02d}:00 "
               f"NZT) -- holding until {QUIET_HOURS[1]:02d}:00")
         return 0
-    # Push and email both go out. Email is the backstop: if ntfy or the phone
+    # Push and email both go out. Email is the backstop: if HomeLab or the phone
     # is unavailable, the notification still lands somewhere.
     priority, tags = PUSH_PRIORITY.get(category, ("default", "racing_car"))
     push_title = subject.replace("[F1] ", "")
