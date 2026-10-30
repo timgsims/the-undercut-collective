@@ -90,6 +90,13 @@ BUDGET_BAR_FLOOR = 75.0
 # racing, 3h total including red-flag suspensions).
 RACE_MAX_HOURS = 3
 
+# A weekend total worked out from driver points because F1 hadn't stored the
+# team's own total yet (provisional.py). Marked, and explained under the table.
+PROV_MARK = "*"
+PROV_NOTE_HTML = ('<div style="font-size:11px;color:#888;padding-top:8px">'
+                  '* Provisional: worked out from driver points, the way the F1 Fantasy app '
+                  'shows it. F1’s own total replaces it once F1 posts it.</div>')
+
 # Line charts with one x-axis label per race (Points progression, Head-to-Head,
 # Budget timeline). Labels are drawn vertical so each needs only its line
 # height, and autoSkip is off -- at Chart.js's default ~50 degree tilt they
@@ -181,9 +188,11 @@ def read_database(db_path, season=None):
         )
     }
 
-    _has_sub_cols = {"subs_allowed", "extra_sub_cost"} <= {
-        row[1] for row in conn.execute("PRAGMA table_info(race_results)")
-    }
+    _rr_columns = {row[1] for row in conn.execute("PRAGMA table_info(race_results)")}
+    _has_sub_cols = {"subs_allowed", "extra_sub_cost"} <= _rr_columns
+    # Points worked out from driver scores while F1 hasn't stored a team's
+    # weekend total yet (fetch_f1_data.py / provisional.py).
+    _prov_col = ", is_provisional" if "is_provisional" in _rr_columns else ""
     managers_raw = []
     for mrow in manager_rows:
         mid = mrow["id"]
@@ -193,7 +202,8 @@ def read_database(db_path, season=None):
         inactive_penalty = {}   # {race_name: points}
         subs_allowance   = {}   # {race_name: free transfers that round}
         sub_cost         = {}   # {race_name: points charged per extra transfer}
-        _extra_cols = ", subs_allowed, extra_sub_cost" if _has_sub_cols else ""
+        provisional      = set()  # race names whose score is provisional
+        _extra_cols = (", subs_allowed, extra_sub_cost" if _has_sub_cols else "") + _prov_col
         for rr in conn.execute(
             "SELECT round, points, gameday_rank, overall_rank, transfers_made, "
             "inactive_driver_penalty" + _extra_cols +
@@ -204,6 +214,8 @@ def read_database(db_path, season=None):
             if not rname:
                 continue
             scores[rname] = int(rr["points"])
+            if _prov_col and rr["is_provisional"]:
+                provisional.add(rname)
             if rr["gameday_rank"] is not None or rr["overall_rank"] is not None:
                 global_ranks[rname] = {"gdrank": rr["gameday_rank"], "ovrank": rr["overall_rank"]}
             if rr["transfers_made"] is not None:
@@ -226,6 +238,7 @@ def read_database(db_path, season=None):
             "rank":   0,   # assigned below, once every manager's total is known
             "avg":    avg,
             "scores": scores,
+            "provisional":      provisional,
             "global_ranks":     global_ranks,
             "transfers":        transfers,
             "subs_allowance":   subs_allowance,
@@ -1136,10 +1149,12 @@ def _weekend_summary_data(data, races):
                              "tc": chip_style.get("tc", "#ccc")} if chip else None,
                 "sessions": [race_sp.get(st) for st in session_types],
                 "total":    m["scores"].get(rname),
+                "provisional": rname in m.get("provisional", ()),
             })
         rows.sort(key=lambda r: -(r["total"] if r["total"] is not None else -1))
         result[rname] = {
             "isFinal":       race.get("is_final", False),
+            "anyProvisional": any(r["provisional"] for r in rows),
             "sessionTypes":  session_types,
             "sessionLabels": session_labels,
             "sessions":      [{"type": session_label(s.get("type")), "done": s.get("done", False)} for s in sessions],
@@ -1206,9 +1221,12 @@ def panel_leaderboard(data):
                 f'<div style="font-size:13px;font-weight:500;color:{row["color"]};display:flex;align-items:center;flex-wrap:wrap;gap:2px">'
                 f'{row["name"]}{chip_pill_html(row["chip"])}</div>'
                 f'{cells}'
-                f'<div style="text-align:right;font-size:13px;font-weight:600">{row["total"] if row["total"] is not None else "—"}</div>'
+                f'<div style="text-align:right;font-size:13px;font-weight:600">'
+                f'{row["total"] if row["total"] is not None else "—"}{PROV_MARK if row["provisional"] else ""}</div>'
                 f'</div>'
             )
+        if d["anyProvisional"]:
+            table_rows += PROV_NOTE_HTML
 
         box_border = "1px solid #ffaa44" if not d["isFinal"] else "0.5px solid #2a2a2a"
         title_color = "#ffaa44" if not d["isFinal"] else "#eee"
@@ -1368,6 +1386,9 @@ def panel_race_breakdown(data):
         negatives = sum(1 for s in all_pts if s < 0)
         neg_note  = f"{negatives} went negative" if negatives else "Everyone positive"
         live_tag  = '' if is_final else '<span class="tag" style="background:#3a2a00;color:#ffaa44">Live — not final</span>'
+        if any(rname in mm.get("provisional", ()) for mm in data["managers_sorted"]):
+            live_tag += ('<span class="tag" style="background:#3a2a00;color:#ffaa44">'
+                         f'{PROV_MARK} Provisional, from driver points</span>')
 
         race_cards_html += f"""<div class="race-card">
   <div class="race-header"><span class="race-title">{race_label(race)}</span><span class="race-round">Round {rnd}</span></div>
@@ -1431,8 +1452,8 @@ function renderWeekendSummary(rname){{
   const rowsHtml=d.rows.map(r=>`<div style="display:grid;grid-template-columns:${{gridCols}};gap:8px;align-items:center;padding:7px 0;border-bottom:0.5px solid #2a2a2a">
     <div style="font-size:13px;font-weight:500;color:${{r.color}};display:flex;align-items:center;flex-wrap:wrap;gap:2px">${{r.name}}${{r.chip?`<span class="chip-pill" style="background:${{r.chip.bg}};color:${{r.chip.tc}};font-size:9px">${{r.chip.label}}</span>`:''}}</div>
     ${{r.sessions.map(v=>`<div style="text-align:right;font-size:13px">${{v===null?'—':v}}</div>`).join('')}}
-    <div style="text-align:right;font-size:13px;font-weight:600">${{r.total===null?'—':r.total}}</div>
-  </div>`).join('');
+    <div style="text-align:right;font-size:13px;font-weight:600">${{r.total===null?'—':r.total}}${{r.provisional?{js(PROV_MARK)}:''}}</div>
+  </div>`).join('')+(d.anyProvisional?{js(PROV_NOTE_HTML)}:'');
   el.innerHTML=`<div class="card" style="border:${{boxBorder}};padding-top:16px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <span style="font-size:18px">🏁</span>

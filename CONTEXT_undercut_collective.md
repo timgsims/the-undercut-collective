@@ -100,6 +100,19 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
   weekend total into `stage_snapshots` against the latest scored stage. That
   is the only record of the league after each stage, for no-spoiler mode's
   stage reveal; F1 Fantasy only reports the current total.
+- **Provisional points (2026-10-31).** F1 posts driver/constructor points for a
+  session hours before it stores each team's total (Austin qualifying: drivers
+  12:08 NZT, teams 14:15), while the official app adds each team up itself. So
+  for the latest round with any driver points, a manager with no official
+  total gets one worked out by `provisional.py` (picks x points, 2x DRS, 3x
+  Extra DRS, transfer penalty, inactive-driver penalty, No Negative via the
+  feed's `NoNegativePoints`, Auto Pilot DRS to the top driver). Stored in
+  `race_results` with `is_provisional=1` and replaced by F1's own figure as
+  soon as it appears; the site marks those totals `*` with a note. Checked
+  against all 144 official scores for rounds 1-18: 143 exact, the miss being
+  a Final Fix round (not modelled). A quick run that sees a new session start
+  scoring leaves `secrets/new_stage_scored`, and `run_pipeline.sh` then does a
+  full run straight away instead of waiting for the hourly one.
 - **Backups of `f1_data.db`** (it's gitignored, so git can't restore it):
   `backup_db.py` runs at the top of every pipeline run, before the fetch,
   and writes to `/mnt/data/backups/f1-fantasy/` on the HDD, not the OS SSD.

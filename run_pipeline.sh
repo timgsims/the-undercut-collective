@@ -29,7 +29,14 @@ if [ "$mode" = "skip" ]; then
 fi
 if [ "$mode" = "quick" ]; then
     python3 fetch_f1_data.py --quick || echo "quick fetch failed (non-fatal)"
-    exit 0
+    # The quick fetch leaves this flag when a session has just started
+    # scoring: carry on into a full run so the provisional points
+    # (provisional.py) go live now rather than at the next hourly run.
+    if [ -e secrets/new_stage_scored ]; then
+        rm -f secrets/new_stage_scored
+    else
+        exit 0
+    fi
 fi
 python3 pipeline_mode.py --mark-full
 

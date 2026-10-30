@@ -22,12 +22,15 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
+
+import provisional
 from datetime import datetime, timezone
 
 BASE_DIR = Path(__file__).resolve().parent
 COOKIE_PATH = BASE_DIR / "secrets" / "f1_cookie.txt"
 DB_PATH = BASE_DIR / "f1_data.db"
 STATUS_PATH = BASE_DIR / "secrets" / "last_run_status.txt"
+NEW_STAGE_FLAG = BASE_DIR / "secrets" / "new_stage_scored"
 
 # Bump each year.
 SEASON = 2026
@@ -348,6 +351,15 @@ def init_db(conn):
         conn.execute("ALTER TABLE race_results ADD COLUMN subs_allowed INTEGER")
     if "extra_sub_cost" not in cols:
         conn.execute("ALTER TABLE race_results ADD COLUMN extra_sub_cost REAL")
+    # 1 = points worked out from driver scores (provisional.py) because F1
+    # hadn't stored this manager's weekend total yet. Added 2026-10-31.
+    if "is_provisional" not in cols:
+        conn.execute("ALTER TABLE race_results ADD COLUMN is_provisional INTEGER NOT NULL DEFAULT 0")
+    # A player's weekend points as the No Negative chip scores them (the feed's
+    # NoNegativePoints), for provisional points. Added 2026-10-31.
+    pcols = {row[1] for row in conn.execute("PRAGMA table_info(player_results)")}
+    if "no_negative_points" not in pcols:
+        conn.execute("ALTER TABLE player_results ADD COLUMN no_negative_points REAL")
     conn.commit()
 
 
@@ -451,11 +463,13 @@ def fetch_and_store_drivers(conn, round_no, cookie):
 
             conn.execute(
                 "INSERT INTO player_results (season, round, player_id, gameday_points, overall_points, "
-                "value_change, value) VALUES (?,?,?,?,?,?,?) ON CONFLICT(season, round, player_id) DO UPDATE SET "
+                "value_change, value, no_negative_points) VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(season, round, player_id) DO UPDATE SET "
                 "gameday_points=excluded.gameday_points, overall_points=excluded.overall_points, "
-                "value_change=excluded.value_change, value=excluded.value",
+                "value_change=excluded.value_change, value=excluded.value, "
+                "no_negative_points=excluded.no_negative_points",
                 (SEASON, round_no, pid, to_float(p.get("GamedayPoints")), to_float(p.get("OverallPpints")),
-                 value_change, value),
+                 value_change, value, to_float(p.get("NoNegativePoints"))),
             )
 
             for sess in p.get("SessionWisePoints", []) or []:
@@ -564,8 +578,43 @@ def price_based_team_value(conn, manager_id, round_no):
     return round(total + bal[0], 1)
 
 
-def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_final):
+def entry_chip(entry, round_no):
+    """The chip this team entry played on round_no, or None."""
+    for taken_field, gd_field, chip_name in CHIP_FIELDS:
+        if entry.get(taken_field) and entry.get(gd_field) == round_no:
+            return chip_name
+    return None
+
+
+def provisional_points(conn, entry, round_no):
+    """This manager's weekend points so far, worked out from the drivers feed
+    (see provisional.py) for when F1 hasn't stored the team's total yet.
+    None if any pick has no points yet."""
+    picks = entry.get("playerid", [])
+    if len(picks) > 7:  # stale Wildcard slot, same rule as process_manager_round
+        picks = sorted(picks, key=lambda p: p.get("playerpostion") or 0)[-7:]
+    pick_ids = [p.get("id") for p in picks if p.get("id") is not None]
+    pts, no_neg = {}, {}
+    for pid, gp, nn in conn.execute(
+        "SELECT player_id, gameday_points, no_negative_points FROM player_results "
+        "WHERE season=? AND round=?", (SEASON, round_no),
+    ):
+        pts[pid], no_neg[pid] = gp, nn
+    types = dict(conn.execute("SELECT id, type FROM players"))
+    return provisional.team_points(
+        pick_ids, pts, no_neg, types,
+        entry.get("capplayerid"), entry.get("mgcapplayerid"),
+        entry.get("usersubs"), entry.get("subsallowed"), entry.get("extrasubscost"),
+        chip=entry_chip(entry, round_no),
+        inactive_penalty=entry.get("inactive_driver_penality_points"),
+    )
+
+
+def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_final,
+                          provisional_pts=None):
     """entry = this round's own team data (points/roster/chips).
+    provisional_pts = points worked out from driver scores, used (and the row
+    marked is_provisional) only while F1 hasn't stored the team's own total.
     budget_entry = round_no+1's team data, used only for its team_info —
     F1 Fantasy's team_info on round N reflects prices as of the START of
     that gameday (i.e. after race N-1, not race N), so the correct "budget
@@ -575,8 +624,14 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
     Falls back to this round's own (lagged) figure if there's no next round
     yet, e.g. mid-way through the final race of the season."""
     gdpoints = entry.get("gdpoints")
+    season_total = entry.get("ovpoints")
+    is_provisional = False
     if gdpoints is None:
-        return None  # race not played yet — quiet no-op
+        if provisional_pts is None:
+            return None  # race not played yet — quiet no-op
+        # ovpoints is still the total before this weekend.
+        gdpoints, is_provisional, is_final = provisional_pts, True, False
+        season_total = season_total + gdpoints if season_total is not None else None
 
     own_info    = entry.get("team_info") or {}
     budget_info = (budget_entry or {}).get("team_info") or {}
@@ -594,7 +649,8 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
             "INSERT INTO race_results (season, round, manager_id, points, season_total, team_value, "
             "team_balance, captain_player_id, mega_captain_player_id, subs_allowed, extra_sub_cost, "
             "is_final, gameday_rank, overall_rank, transfers_made, "
-            "inactive_driver_penalty, fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "inactive_driver_penalty, fetched_at, is_provisional) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(season, round, manager_id) DO UPDATE SET points=excluded.points, "
             "season_total=excluded.season_total, team_value=excluded.team_value, "
             "team_balance=excluded.team_balance, captain_player_id=excluded.captain_player_id, "
@@ -602,9 +658,10 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
             "subs_allowed=excluded.subs_allowed, extra_sub_cost=excluded.extra_sub_cost, "
             "is_final=excluded.is_final, gameday_rank=excluded.gameday_rank, "
             "overall_rank=excluded.overall_rank, transfers_made=excluded.transfers_made, "
-            "inactive_driver_penalty=excluded.inactive_driver_penalty, fetched_at=excluded.fetched_at",
+            "inactive_driver_penalty=excluded.inactive_driver_penalty, fetched_at=excluded.fetched_at, "
+            "is_provisional=excluded.is_provisional",
             (
-                SEASON, round_no, social_id, gdpoints, entry.get("ovpoints"),
+                SEASON, round_no, social_id, gdpoints, season_total,
                 team_value,
                 own_info.get("teamBal"),
                 entry.get("capplayerid"),
@@ -617,6 +674,7 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
                 entry.get("usersubs"),
                 entry.get("inactive_driver_penality_points"),
                 datetime.now(timezone.utc).isoformat(),
+                int(is_provisional),
             ),
         )
 
@@ -740,6 +798,11 @@ def main():
     # changes stay blank until the next race weekend starts. Not existing yet
     # (e.g. after the final round) is expected, so no warning for it.
     if not fatal and quick:
+        def latest_scored_stage():
+            return conn.execute(
+                "SELECT round, session_number FROM session_status WHERE season=? AND is_done=1 "
+                "ORDER BY round DESC, session_number DESC LIMIT 1", (SEASON,)).fetchone()
+        stage_before = latest_scored_stage()
         # The round in progress may have no manager points yet (drivers score
         # first), so also check the round after the latest one with points.
         for round_no in (max_round, max_round + 1):
@@ -750,6 +813,12 @@ def main():
                 print(f"  [warn] drivers feed round {round_no}: {err}")
             time.sleep(0.15)
         record_stage_snapshots(conn, manager_pts)
+        if latest_scored_stage() != stage_before:
+            # A session has just started scoring: run_pipeline.sh does a full
+            # run now, so provisional points reach the site without waiting
+            # up to an hour for the next one.
+            NEW_STAGE_FLAG.touch()
+            print("New session scored -- asking for a full run.")
         conn.close()
         STATUS_PATH.write_text(
             f"OK at {datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
@@ -775,6 +844,15 @@ def main():
             print(f"  [warn] NZ leaderboard: {err}")
         time.sleep(0.15)
 
+    # The latest round with any driver points (refreshed by pass 2). A manager
+    # with no points of their own for it yet gets provisional points worked
+    # out from their picks (see provisional.py) until F1 stores the total.
+    scored_round = None
+    if not fatal:
+        scored_round = conn.execute(
+            "SELECT MAX(round) FROM session_status WHERE season=? AND is_done=1", (SEASON,)
+        ).fetchone()[0]
+
     # Pass 3: each manager's own scores/roster/chips/budget, as before.
     for name, team_name, social_id, guid_base, is_self in MANAGERS:
         if fatal:
@@ -784,19 +862,22 @@ def main():
         full_guid = f"{guid_base}-0-{social_id}"
         guid_for_url = guid_base if is_self else full_guid
         with_data, final_rounds = manager_rounds[social_id]
+        prov_round = (scored_round if scored_round is not None
+                      and scored_round > max(with_data, default=0) else None)
+        keep_rounds = with_data | ({prov_round} if prov_round else set())
 
         # A round that used to have data but no longer does (shouldn't happen,
         # but the API is the single source of truth) gets removed rather than
         # left stale.
-        if with_data:
-            placeholders = ",".join("?" * len(with_data))
+        if keep_rounds:
+            placeholders = ",".join("?" * len(keep_rounds))
             conn.execute(
                 f"DELETE FROM race_results WHERE season=? AND manager_id=? AND round NOT IN ({placeholders})",
-                (SEASON, social_id, *with_data),
+                (SEASON, social_id, *keep_rounds),
             )
             conn.execute(
                 f"DELETE FROM team_picks WHERE season=? AND manager_id=? AND round NOT IN ({placeholders})",
-                (SEASON, social_id, *with_data),
+                (SEASON, social_id, *keep_rounds),
             )
         else:
             conn.execute("DELETE FROM race_results WHERE season=? AND manager_id=?", (SEASON, social_id))
@@ -836,6 +917,24 @@ def main():
                 budget_entry = None
 
             process_manager_round(conn, social_id, round_no, entry, budget_entry, round_no in final_rounds)
+
+        if prov_round and not fatal:
+            # Other managers' teams can't be read until the round locks, which
+            # is before anything scores, so an error here is unexpected.
+            entry, err = get_entry(prov_round)
+            if err:
+                if "401" in err:
+                    print(f"FATAL: {err} — stopping, no partial data written for remaining rounds/managers.")
+                    fatal = True
+                    fail_reason, fail_detail = "auth", err
+                else:
+                    print(f"  [warn] {name} round {prov_round} (provisional): {err}")
+            elif entry is not None:
+                pts = provisional_points(conn, entry, prov_round)
+                if pts is not None:
+                    process_manager_round(conn, social_id, prov_round, entry, None, False,
+                                          provisional_pts=pts)
+                    print(f"  {name} round {prov_round}: {pts:g} provisional")
         if fatal:
             break
 
