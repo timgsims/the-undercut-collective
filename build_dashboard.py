@@ -18,6 +18,8 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import tools
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION — edit these if paths change
 # ─────────────────────────────────────────────────────────────────────────────
@@ -300,6 +302,9 @@ def read_database(db_path, season=None):
         pass  # no calendar table yet -- races then only count once finalised
     data["race_start_utc"] = race_start_utc
 
+    # Tools tab (Hindsight, Price predictor): tools.py.
+    data["tools"] = tools.read_tools_data(conn, season, race_name_by_round)
+
     n_finish_cols = len(managers_raw)
     data["n_finish_cols"] = n_finish_cols
 
@@ -566,6 +571,12 @@ def spoiler_free_db(db_path, season, hidden_round):
             "  AND prev.player_id=player_results.player_id"
             ") WHERE season=? AND round=?", (season, r))
         dst.execute("DELETE FROM nz_leaderboard WHERE season=?", (season,))
+        # The Tools tab's per-asset stats (fetch_f1_data.py), on older DBs absent.
+        for table in ("player_gameday_stats", "player_event_points"):
+            try:
+                dst.execute(f"DELETE FROM {table} WHERE season=? AND round>=?", (season, r))
+            except sqlite3.OperationalError:
+                pass
         dst.commit()
     finally:
         dst.close()
@@ -3355,6 +3366,7 @@ PANELS = [
     ("📊 Stats",           "stats",       panel_stats),
     ("📈 Positions",       "positions",   panel_positions),
     ("🧩 Team Picks",      "picks",       panel_picks),
+    ("🧰 Tools",           "tools",       tools.panel_tools),
     # ("🏎 Driver Results",  "drivers",     panel_driver_results),  # still in preview, not approved for the live site yet
 ]
 

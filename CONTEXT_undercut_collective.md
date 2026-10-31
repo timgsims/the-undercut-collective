@@ -218,6 +218,10 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
    Transfer Impact Overview/per-Race (diverging bar charts, reuses the same
    trade-swing math as Trade Regrets/Best Trades), Driver/Constructor
    Popularity, Trade Regrets, Best Trades, Loyal Holds, DRS Performance
+9. 🧰 Tools (2026-10-31) — Hindsight (best possible teams for a past round,
+   searched in the browser) and Price predictor (points needed and odds for each
+   price move). Code in `tools.py`; F1’s price rule is in its docstring. The plan
+   for the rest (simulation, Team Calculator, Elite Data) is `TOOLS_PLAN.md`.
 9. 🏎 Driver Results — **currently in local preview only, not yet approved
    for the live site** (see Pending below). Ranked by fantasy points per
    race (not DRS-doubled — this is *not* the same as F1's real official

@@ -193,6 +193,28 @@ CREATE TABLE IF NOT EXISTS round_finalized_at (
     finalized_at TEXT NOT NULL,
     PRIMARY KEY (season, round)
 );
+-- From the per-asset stats feed (feeds/popup/playerstats_<id>.json), for the
+-- Tools tab. played = the asset took part that round (reserves and drivers
+-- between seats don't); price = its price for that round.
+CREATE TABLE IF NOT EXISTS player_gameday_stats (
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    player_id TEXT NOT NULL,
+    played INTEGER,
+    price REAL,
+    PRIMARY KEY (season, round, player_id)
+);
+-- The same feed's points per scoring item ("Race Position", "Race position
+-- gained", "Fastest Pitstop", ...), for the prediction model.
+CREATE TABLE IF NOT EXISTS player_event_points (
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    player_id TEXT NOT NULL,
+    event TEXT NOT NULL,
+    frequency TEXT,
+    points REAL,
+    PRIMARY KEY (season, round, player_id, event)
+);
 """
 
 
@@ -360,6 +382,13 @@ def init_db(conn):
     pcols = {row[1] for row in conn.execute("PRAGMA table_info(player_results)")}
     if "no_negative_points" not in pcols:
         conn.execute("ALTER TABLE player_results ADD COLUMN no_negative_points REAL")
+    # Short code (VER, FER, RBR...) and whether the asset is in the game right
+    # now, for the Tools tab. Added 2026-10-31.
+    plcols = {row[1] for row in conn.execute("PRAGMA table_info(players)")}
+    if "tla" not in plcols:
+        conn.execute("ALTER TABLE players ADD COLUMN tla TEXT")
+    if "active" not in plcols:
+        conn.execute("ALTER TABLE players ADD COLUMN active INTEGER")
     conn.commit()
 
 
@@ -452,10 +481,13 @@ def fetch_and_store_drivers(conn, round_no, cookie):
                 continue
             name  = p.get("DisplayName") or p.get("FUllName")
             ptype = "constructor" if p.get("PositionName") == "CONSTRUCTOR" else "driver"
+            # Rounds are fetched oldest first, so tla/active end up as the
+            # latest round's: whether the asset is in the game right now.
             conn.execute(
-                "INSERT INTO players (id, name, type) VALUES (?,?,?) "
-                "ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type",
-                (pid, name, ptype),
+                "INSERT INTO players (id, name, type, tla, active) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type, "
+                "tla=excluded.tla, active=excluded.active",
+                (pid, name, ptype, p.get("DriverTLA") or None, int(str(p.get("IsActive")) == "1")),
             )
 
             value, old_value = to_float(p.get("Value")), to_float(p.get("OldPlayerValue"))
@@ -497,6 +529,55 @@ def fetch_and_store_drivers(conn, round_no, cookie):
                 (SEASON, round_no, sn, info["type"], int(info["done"])),
             )
     return None
+
+
+def player_stats_url(player_id):
+    return f"https://fantasy.formula1.com/feeds/popup/playerstats_{player_id}.json"
+
+
+def fetch_and_store_player_stats(conn, cookie):
+    """Public feed, one call per driver/constructor: every round's price,
+    whether the asset took part, and its points split by scoring item. The
+    price rule only counts rounds an asset took part in (tools.py), and the
+    split is the training data for predictions. Returns a list of errors."""
+    errors = []
+    ids = [r[0] for r in conn.execute("SELECT id FROM players WHERE type IS NOT NULL")]
+    for pid in ids:
+        payload, err = fetch_json(player_stats_url(pid), cookie)
+        time.sleep(0.15)
+        if err:
+            errors.append(f"{pid}: {err}")
+            continue
+        try:
+            gamedays = payload["Value"]["GamedayWiseStats"] or []
+        except (KeyError, TypeError):
+            errors.append(f"{pid}: unexpected response shape")
+            continue
+        with conn:
+            for g in gamedays:
+                rnd = g.get("GamedayId")
+                if rnd is None:
+                    continue
+                conn.execute(
+                    "INSERT INTO player_gameday_stats (season, round, player_id, played, price) "
+                    "VALUES (?,?,?,?,?) ON CONFLICT(season, round, player_id) DO UPDATE SET "
+                    "played=excluded.played, price=excluded.price",
+                    (SEASON, rnd, pid, g.get("IsPlayed"), g.get("PlayerValue")),
+                )
+                events = g.get("StatsWise") or []
+                if events:
+                    conn.execute(
+                        "DELETE FROM player_event_points WHERE season=? AND round=? AND player_id=?",
+                        (SEASON, rnd, pid))
+                for s in events:
+                    if not s.get("Event"):
+                        continue
+                    conn.execute(
+                        "INSERT OR REPLACE INTO player_event_points (season, round, player_id, "
+                        "event, frequency, points) VALUES (?,?,?,?,?,?)",
+                        (SEASON, rnd, pid, s["Event"].strip(), s.get("Frequency"), s.get("Value")),
+                    )
+    return errors
 
 
 def seed_races(conn):
@@ -843,6 +924,12 @@ def main():
         if err:
             print(f"  [warn] NZ leaderboard: {err}")
         time.sleep(0.15)
+
+    # Per-asset stats for the Tools tab: ~35 public requests. Non-fatal.
+    if not fatal:
+        errs = fetch_and_store_player_stats(conn, cookie)
+        if errs:
+            print(f"  [warn] player stats: {len(errs)} failed, e.g. {errs[0]}")
 
     # The latest round with any driver points (refreshed by pass 2). A manager
     # with no points of their own for it yet gets provisional points worked
