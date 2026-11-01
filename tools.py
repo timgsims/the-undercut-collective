@@ -269,7 +269,48 @@ def read_tools_data(conn, season, race_name_by_round):
                 "pricesFrom": T, "managers": mgrs, "src": src}
 
     colours = {k: [c, _ink(c)] for k, c in TEAM_COLOURS.items()}
-    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours}
+    # ── Elite Data: the global top 500 (elite.py), next to the league ───────
+    elite = []
+    try:
+        rows = conn.execute("SELECT round, picks, captain, mega_captain, chip, detail_at FROM elite_teams "
+                            "WHERE season=? ORDER BY round", (season,)).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    by_round = {}
+    for r, picks, cap, mega, chip, det in rows:
+        e = by_round.setdefault(r, {"n": 0, "nd": 0, "pick": {}, "drs": {}, "x3": {}, "chips": {}})
+        e["n"] += 1
+        for p in json.loads(picks):
+            e["pick"][p] = e["pick"].get(p, 0) + 1
+        if det and cap:
+            e["nd"] += 1
+            e["drs"][cap] = e["drs"].get(cap, 0) + 1
+            if mega:
+                e["x3"][mega] = e["x3"].get(mega, 0) + 1
+            if chip:
+                e["chips"][chip] = e["chips"].get(chip, 0) + 1
+    for r, e in sorted(by_round.items()):
+        own = {}
+        mgr_n = 0
+        for mid, in conn.execute("SELECT DISTINCT manager_id FROM team_picks WHERE season=? AND round=?", (season, r)):
+            mgr_n += 1
+            for (p,) in conn.execute("SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=?",
+                                     (season, r, mid)):
+                own[p] = own.get(p, 0) + 1
+        ids = set(e["pick"]) | set(own)
+        assets = []
+        for pid in ids:
+            p = players.get(pid)
+            if not p:
+                continue
+            assets.append({"id": pid, "c": p["code"], "t": "C" if p["type"] == "constructor" else "D",
+                           "k": p["team"], "pk": round(100 * e["pick"].get(pid, 0) / e["n"], 1),
+                           "drs": round(100 * (e["drs"].get(pid, 0) + e["x3"].get(pid, 0)) / e["nd"], 1) if e["nd"] else None,
+                           "lg": round(100 * own.get(pid, 0) / mgr_n) if mgr_n else None})
+        elite.append({"r": r, "name": race_name_by_round.get(r, f"Round {r}"), "n": e["n"], "nd": e["nd"],
+                      "mgrs": mgr_n, "chips": e["chips"], "assets": assets})
+
+    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours, "elite": elite}
 
 
 def _json(v):
@@ -287,7 +328,8 @@ def panel_tools(data):
 
 TOOLS_HTML = r"""
 <style>
-.tl-sub{display:flex;gap:6px;margin:4px 0 12px}
+.tl-sub{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:4px 0 12px}
+@media (max-width:520px){.tl-sub{grid-template-columns:repeat(2,1fr)}}
 .tl-sub button{flex:1;font-size:13px;padding:8px 10px;border-radius:8px;border:0.5px solid #333;background:#1a1a1a;color:#aaa;cursor:pointer}
 .tl-sub button.on{background:#2a2a2a;color:#eee;border-color:#555}
 .tl-ctl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
@@ -337,6 +379,7 @@ TOOLS_HTML = r"""
   <button id="tlBtnC" class="on" onclick="tlShow('c')">Team Calculator</button>
   <button id="tlBtnH" onclick="tlShow('h')">Hindsight</button>
   <button id="tlBtnP" onclick="tlShow('p')">Budget Builder</button>
+  <button id="tlBtnE" onclick="tlShow('e')">Elite Data</button>
 </div>
 <div id="tlC">
   <div id="tcHead"></div>
@@ -378,12 +421,13 @@ TOOLS_HTML = r"""
   <button class="tl-more" id="tlMore">Show more teams</button>
 </div>
 <div id="tlP" style="display:none"></div>
+<div id="tlE" style="display:none"></div>
 <script>
 (function(){
 const T=__TOOLS_DATA__, COL=__MANAGER_COLOURS__;
 const $=id=>document.getElementById(id);
 window.tlShow=function(w){
-  for(const k of ['c','h','p']){$('tl'+k.toUpperCase()).style.display=w===k?'':'none';
+  for(const k of ['c','h','p','e']){$('tl'+k.toUpperCase()).style.display=w===k?'':'none';
     $('tlBtn'+k.toUpperCase()).classList.toggle('on',w===k);}
 };
 const fmt=(v,d=1)=>v==null?'—':(+v).toFixed(d);
@@ -542,6 +586,28 @@ $('tlMore').onclick=()=>{st.n=Math.min(50,st.n+10);runH();};
 fillMgr();setBudget();assetsBar();runH();
 
 // ── Budget builder ────────────────────────────────────────────────────────
+// ── Elite Data ─────────────────────────────────────────────────────────────
+const E=T.elite||[];
+function eliteView(){
+  const el=$('tlE');
+  if(!E.length){el.innerHTML='<div class="tl-note">Elite Data starts with Mexico 2026: what the global top 500 picked, once teams lock. Nothing yet.</div>';return;}
+  const sel=$('tlERound'), cur=sel?+sel.value:E[E.length-1].r, e=E.find(x=>x.r===cur)||E[E.length-1];
+  const pct=v=>v==null?'—':(v>=10||v===0?Math.round(v):v.toFixed(1))+'%';
+  const rows=t=>e.assets.filter(a=>a.t===t).sort((a,b)=>b.pk-a.pk||(b.lg||0)-(a.lg||0)).map(a=>{
+    const d=a.lg==null?null:a.pk-a.lg;
+    const tag=a.lg===0&&a.pk>=25?'<small class="tl-up">nobody here</small>':a.pk<5&&a.lg>=25?'<small class="tl-dn">league only</small>':'';
+    return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span>${tag}</td><td>${pct(a.pk)}</td><td>${pct(a.drs)}</td><td>${a.lg==null?'—':a.lg+'%'}</td>
+      <td class="${d==null?'':d>=15?'tl-up':d<=-15?'tl-dn':''}">${d==null?'—':(d>0?'+':'')+Math.round(d)}</td></tr>`;}).join('');
+  const head=n=>`<tr><th>${n}</th><th>Top 500</th><th>DRS</th><th>League</th><th>Diff</th></tr>`;
+  const chips=Object.entries(e.chips).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${n}`).join(' · ');
+  el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % from all ${e.n} teams; DRS % (2x or 3x) and chips from the ${e.nd} whose full team we've read so far. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does.</div>
+    <div class="tl-ctl" style="grid-template-columns:1fr"><div><label>Round</label><select id="tlERound">${E.slice().reverse().map(x=>`<option value="${x.r}" ${x.r===e.r?'selected':''}>R${x.r} ${x.name}</option>`).join('')}</select></div></div>
+    ${chips?`<div class="tl-note" style="margin-top:0"><b>Chips this round (top 500):</b> ${chips}</div>`:''}
+    <div class="section-label">Constructors</div><table class="tl-pp">${head('Team')}${rows('C')}</table>
+    <div class="section-label">Drivers</div><table class="tl-pp">${head('Driver')}${rows('D')}</table>`;
+  $('tlERound').onchange=eliteView;}
+eliteView();
+
 const P=T.predictor;
 function ppTable(rows,tier,label){
   if(!rows.length)return '';

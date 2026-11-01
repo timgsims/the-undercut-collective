@@ -74,6 +74,10 @@ python3 cookie_watch.py || echo "cookie_watch.py failed (non-fatal)"
 python3 sim_data.py || echo "sim_data.py failed (non-fatal)"
 python3 sim.py || echo "sim.py failed (non-fatal)"
 
+# Elite Data (Tools tab): the global top 500's locked teams once per round,
+# then their DRS and chips, at most 200 calls a run. Non-fatal.
+python3 elite.py || echo "elite.py failed (non-fatal)"
+
 if python3 gate_check.py; then
     python3 build_dashboard.py
     build_status=$?

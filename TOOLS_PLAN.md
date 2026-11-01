@@ -46,6 +46,13 @@ where the data comes from, not the look and feel. Written 2026-10-31.
   ownership and chip usage exist already (Team Picks, Stats), so the next tool is Elite
   Data, shown against league ownership for differentials. Live Scoring and Statistics
   are covered by the dashboard.
+- **Built 2026-11-01: Elite Data** (`elite.py`, Tools > Elite Data). After each lock, one
+  public call stores the top 500's locked teams (`elite_teams`, keyed by feed position:
+  tied players share a rank); then each one's DRS, Extra DRS and chip come from the
+  opponent team call with Tim's cookie, at most 200 a pipeline run, 1.2 s apart, so a
+  round is complete within a few hours. The view: pick %, DRS % (2x or 3x), league
+  ownership and the difference, plus the top 500's chips. From Mexico 2026 on; earlier
+  rounds would need ~9,000 calls.
 - **Elite Data is feasible:** `feeds/leaderboard/public/global/list_1_0_1.json` is public
   and lists the global top 500 with each player's current team (pick % in one call).
   DRS % and chips need the opponent team call per player, ~500 calls once per round

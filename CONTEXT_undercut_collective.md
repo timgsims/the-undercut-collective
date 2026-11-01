@@ -245,7 +245,8 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
    Transfer Impact Overview/per-Race (diverging bar charts, reuses the same
    trade-swing math as Trade Regrets/Best Trades), Driver/Constructor
    Popularity, Trade Regrets, Best Trades, Loyal Holds, DRS Performance
-9. 🧰 Tools (2026-10-31) — Team calculator (2026-11-01: best teams for the next
+9. 🧰 Tools (2026-10-31) — Elite Data (2026-11-01, `elite.py`: the global top 500's
+   picks, DRS and chips against the league), Team calculator (2026-11-01: best teams for the next
    deadline by expected points, from a manager's real team, bank and free transfers,
    with transfer penalties and chips), Hindsight (best possible teams for a past round,
    searched in the browser) and Budget builder (was "Price predictor": points needed
