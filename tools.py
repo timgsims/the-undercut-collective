@@ -604,9 +604,9 @@ function eliteView(){
   const head=n=>`<tr><th>${n}</th><th>Top 500</th><th>DRS</th><th>League</th><th>Diff</th></tr>`;
   // As F1FT shows them: the share of teams that played each chip this round.
   const chips=e.nd?Object.entries(e.chips).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${pct(100*n/e.nd)}`).join(' · '):'';
-  el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % from all ${e.n} teams; DRS % (2x or 3x) and chips from the ${e.nd} whose full team we've read so far. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does.</div>
+  el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % comes from all ${e.n} teams as soon as teams lock. DRS % (2x or 3x) and chips need each team read one at a time, about 200 an hour, so they're complete about 3 hours after the lock${e.nd<e.n?` (<b>${e.nd} of ${e.n} read so far</b>)`:''}. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does.</div>
     <div class="tl-ctl" style="grid-template-columns:1fr"><div><label>Round</label><select id="tlERound">${E.slice().reverse().map(x=>`<option value="${x.r}" ${x.r===e.r?'selected':''}>R${x.r} ${x.name}</option>`).join('')}</select></div></div>
-    ${e.nd?`<div class="tl-note" style="margin-top:0"><b>Chips played this round:</b> ${chips||'none'} <span style="color:#666">(share of the ${e.nd} teams read so far)</span></div>`:''}
+    ${e.nd?`<div class="tl-note" style="margin-top:0"><b>Chips played this round:</b> ${chips||'none'} <span style="color:#666">(share of ${e.nd<e.n?`the ${e.nd} teams read so far`:`all ${e.n} teams`})</span></div>`:''}
     <div class="section-label">Drivers</div><table class="tl-pp">${head('Driver')}${rows('D')}</table>
     <div class="section-label">Constructors</div><table class="tl-pp">${head('Team')}${rows('C')}</table>`;
   $('tlERound').onchange=eliteView;}
