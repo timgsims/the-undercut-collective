@@ -297,7 +297,8 @@ def read_tools_data(conn, season, race_name_by_round):
             for (p,) in conn.execute("SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=?",
                                      (season, r, mid)):
                 own[p] = own.get(p, 0) + 1
-        ids = set(e["pick"]) | set(own)
+        # Every asset in the game, like F1FT, so a 0% pick still shows.
+        ids = set(e["pick"]) | set(own) | {pid for pid, p in players.items() if p["active"]}
         assets = []
         for pid in ids:
             p = players.get(pid)
@@ -595,7 +596,8 @@ function eliteView(){
   if(!E.length){el.innerHTML='<div class="tl-note">Elite Data starts with Mexico 2026: what the global top 500 picked, once teams lock. Nothing yet.</div>';return;}
   const sel=$('tlERound'), cur=sel?+sel.value:E[E.length-1].r, e=E.find(x=>x.r===cur)||E[E.length-1];
   const pct=v=>v==null?'—':(v>=10||v===0?Math.round(v):v.toFixed(1))+'%';
-  const rows=t=>e.assets.filter(a=>a.t===t).sort((a,b)=>b.pk-a.pk||(b.lg||0)-(a.lg||0)).map(a=>{
+  // F1FT's order: pick % highest first, then DRS %, then alphabetical.
+  const rows=t=>e.assets.filter(a=>a.t===t).sort((a,b)=>b.pk-a.pk||(b.drs||0)-(a.drs||0)||a.c.localeCompare(b.c)).map(a=>{
     const d=a.lg==null?null:a.pk-a.lg;
     const tag=a.lg===0&&a.pk>=25?'<small class="tl-up">nobody here</small>':a.pk<5&&a.lg>=25?'<small class="tl-dn">league only</small>':'';
     return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span>${tag}</td><td>${pct(a.pk)}</td><td>${pct(a.drs)}</td><td>${a.lg==null?'—':a.lg+'%'}</td>
@@ -605,8 +607,8 @@ function eliteView(){
   el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % from all ${e.n} teams; DRS % (2x or 3x) and chips from the ${e.nd} whose full team we've read so far. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does.</div>
     <div class="tl-ctl" style="grid-template-columns:1fr"><div><label>Round</label><select id="tlERound">${E.slice().reverse().map(x=>`<option value="${x.r}" ${x.r===e.r?'selected':''}>R${x.r} ${x.name}</option>`).join('')}</select></div></div>
     ${chips?`<div class="tl-note" style="margin-top:0"><b>Chips this round (top 500):</b> ${chips}</div>`:''}
-    <div class="section-label">Constructors</div><table class="tl-pp">${head('Team')}${rows('C')}</table>
-    <div class="section-label">Drivers</div><table class="tl-pp">${head('Driver')}${rows('D')}</table>`;
+    <div class="section-label">Drivers</div><table class="tl-pp">${head('Driver')}${rows('D')}</table>
+    <div class="section-label">Constructors</div><table class="tl-pp">${head('Team')}${rows('C')}</table>`;
   $('tlERound').onchange=eliteView;}
 eliteView();
 
