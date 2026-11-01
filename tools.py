@@ -527,12 +527,14 @@ function runC(){
   $('tcMore').style.display=top.length>=cst.n&&cst.n<50?'':'none';
   if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);const col=COL[m.m]||'#ccc';
     const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
-    let now=null;
-    if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});now=keep[0]?keep[0].pts:null;}
+    let now=null,nowD=null;
+    if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});
+      if(keep[0]){now=keep[0].pts;nowD=keep[0].dp;}}
+    const sd=v=>`${v>=0?'+':'−'}$${Math.abs(v).toFixed(1)}M`;
     const b=D.length?boosts(D,o.chip):{};
-    $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team now: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
+    $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team now: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
       `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).sort(byPts).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${V(Math.round(a.x))}</span>`).join('')}</div>`+
-      (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts on keeping this one, after any transfer penalty.</div>`:'');
+      (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts and ${sd(top[0].dp-nowD)} price change on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
 if(C){
