@@ -225,7 +225,7 @@ Chart.register({id:'xchartPin',afterRender:xchartPin});
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">2026 Season · 18/23 races · Updated 1 Nov 2026, 8:43 pm NZT</span>
+      <span class="header-badge">2026 Season · 18/23 races · Updated 1 Nov 2026, 8:45 pm NZT</span>
     </div>
     <nav class="tab-nav">
       <button class="tab-btn active" id="tab-leaderboard" onclick="showTab('leaderboard')">🏁 Leaderboard</button>
@@ -1627,18 +1627,30 @@ fillMgr();setBudget();assetsBar();runH();
 const P=T.predictor;
 function ppTable(rows,tier,label){
   if(!rows.length)return '';
-  // The tier's steps (an asset at the $3M floor or $34M cap moves less).
-  const hd=rows[0].p>=18.5?[-0.3,-0.1,0.1,0.3]:[-0.6,-0.2,0.2,0.6];
+  // Like F1FT: highest expected price change first. An asset at the $3M floor
+  // or $34M cap can't take the full step; those bands go in a 0.0 column.
+  rows=rows.slice().sort((a,b)=>b.xd-a.xd||b.p-a.p);
+  const base=rows[0].p>=18.5?[-0.3,-0.1,0.1,0.3]:[-0.6,-0.2,0.2,0.6];
+  const zero=rows.some(a=>a.steps.some(s=>s===0));
+  const hd=zero?[base[0],base[1],0,base[2],base[3]]:base;
   const pr=P.prevRounds;
   return `<div class="section-label">${label}</div><table class="tl-pp"><tr><th>${tier}</th><th>$</th>${pr.map(r=>`<th>R${r}</th>`).join('')}
-    ${hd.map(s=>`<th>${sgn(s)}</th>`).join('')}<th>xΔ$</th></tr>`+
-  rows.map(a=>{const cells=a.probs.map((p,i)=>{const need=i===0?`&lt;${Math.ceil(a.needs[0])}`:`${Math.ceil(a.needs[i-1])}+`;
-      const pct=Math.round(p*100);const lk=pct===Math.max(...a.probs.map(x=>Math.round(x*100)));
-      return `<td class="${lk?'lk':''}">${pct}%<small>${need}</small></td>`;}).join('');
+    ${hd.map(s=>`<th>${s===0?'0.0':sgn(s)}</th>`).join('')}<th>xΔ$</th></tr>`+
+  rows.map(a=>{
+    // Bands 0-3 have lower/upper point limits needs[i-1] / needs[i].
+    const col=hd.map(()=>({p:0,lo:null,hi:null,any:false}));
+    a.probs.forEach((p,i)=>{const k=hd.indexOf(a.steps[i]===0?0:base[i]);const c=col[k];
+      const lo=i===0?null:a.needs[i-1], hi=i===3?null:a.needs[i];
+      if(!c.any){c.lo=lo;}c.hi=hi;c.p+=p;c.any=true;});
+    const best=Math.max(...col.map(c=>Math.round(c.p*100)));
+    const cells=col.map(c=>{if(!c.any)return '<td></td>';
+      const need=c.lo==null&&c.hi==null?'any':c.lo==null?`&lt;${Math.ceil(c.hi)}`:`${Math.ceil(c.lo)}+`;
+      const pct=Math.round(c.p*100);
+      return `<td class="${pct===best?'lk':''}">${pct}%<small>${need}</small></td>`;}).join('');
     return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${a.c}</span></td><td>${fmt(a.p)}</td>${a.prev.map(([r,x])=>`<td>${x==null?'—':Math.round(x)}</td>`).join('')}${cells}<td class="${a.xd>0.04?'tl-up':a.xd<-0.04?'tl-dn':''}">${a.xd>0?'+':''}${a.xd.toFixed(2)}</td></tr>`;}).join('')+'</table>';}
 if(P){
   const A=P.assets, grp=(t,hi)=>A.filter(a=>a.t===t&&(hi?a.p>=18.5:a.p<18.5));
-  $('tlP').innerHTML=`<div class="tl-note">Price changes after <b>R${P.r} ${P.name}</b>${P.live?' (weekend in progress)':''}. Each percentage is the chance of that price move; underneath is the points it takes. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.
+  $('tlP').innerHTML=`<div class="tl-note">Price changes after <b>R${P.r} ${P.name}</b>${P.live?' (weekend in progress)':''}. Each percentage is the chance of that price move; underneath is the points it takes. Sorted by expected price change (xΔ$), best first; 0.0 is for an asset at the $3M floor or $34M cap. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.
   <br>The odds come from each asset's last 8 races, so they lag behind form changes. Odds from a proper race simulation are planned.</div>`+
   ppTable(grp('D',true),'Driver','Drivers $18.5M+')+ppTable(grp('D',false),'Driver','Drivers under $18.5M')+
   ppTable(grp('C',true),'Team','Constructors $18.5M+')+ppTable(grp('C',false),'Team','Constructors under $18.5M');
