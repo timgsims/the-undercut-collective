@@ -1,6 +1,8 @@
-"""The Tools tab: Hindsight and the Price Predictor (see TOOLS_PLAN.md).
+"""The Tools tab: Team Calculator, Hindsight and the Budget Builder (see
+TOOLS_PLAN.md).
 
-Both work the way f1fantasytools.com's Hindsight and Budget Builder do. The
+They work the way f1fantasytools.com's Team Calculator, Hindsight and Budget
+Builder do. The
 data is read here at build time and baked into the page as JSON; the team
 search runs in the browser, so budget, chip and filters change instantly.
 
@@ -23,6 +25,11 @@ TIER_A_FROM = 18.5
 PPM_CUTS = (0.6, 0.9, 1.2)
 STEPS_A = (-0.3, -0.1, 0.1, 0.3)
 STEPS_B = (-0.6, -0.2, 0.2, 0.6)
+# Team Calculator's expected points: the plain average of the last 12 rounds
+# an asset took part in. Backtested on 2026 rounds 5-18: longer windows beat
+# shorter ones and weighting recent rounds more made it worse (mean error
+# 13.4 pts with 12 rounds, 14.4 with 3).
+FORM_ROUNDS = 12
 
 
 def steps_for(price):
@@ -150,7 +157,7 @@ def read_tools_data(conn, season, race_name_by_round):
         hindsight.append({"r": r, "name": race_name_by_round.get(r, f"Round {r}"),
                           "final": final.get(r, False), "assets": assets, "teams": teams})
 
-    # ── Price predictor: the newest round F1 has published prices for ───────
+    # ── Budget Builder (price predictor): the newest round F1 has published prices for ───────
     priced = [r for (r,) in conn.execute(
         "SELECT DISTINCT round FROM player_results WHERE season=? AND value IS NOT NULL "
         "ORDER BY round", (season,))]
@@ -178,18 +185,65 @@ def read_tools_data(conn, season, race_name_by_round):
             sd = max(sd, 6.0)
             cdf = [_norm_cdf(x - 0.5, mean, sd) for x in needs]
             probs = [cdf[0], cdf[1] - cdf[0], cdf[2] - cdf[1], 1 - cdf[2]]
+            # Expected points for the Team Calculator (plan step A, until the
+            # simulation).
+            played_r = [r for r in range(T - 1, 0, -1)
+                        if took_part(r, pid) and res.get((r, pid), (None,))[0] is not None][:FORM_ROUNDS]
+            n_r = len(played_r) or 1
+            xp = sum(res[(r, pid)][0] for r in played_r) / n_r
+            xn = sum(res[(r, pid)][1] if res[(r, pid)][1] is not None else max(0.0, res[(r, pid)][0])
+                     for r in played_r) / n_r
             rows.append({
-                "c": p["code"], "t": "C" if p["type"] == "constructor" else "D", "k": p["team"],
+                "id": pid, "c": p["code"], "t": "C" if p["type"] == "constructor" else "D", "k": p["team"],
                 "p": round(price, 1), "prev": prev, "needs": needs, "steps": steps,
                 "probs": [round(x, 3) for x in probs], "mean": round(mean, 1),
                 "xd": round(sum(pr * s for pr, s in zip(probs, steps)), 2),
+                "xp": round(xp, 1), "xn": round(xn, 1),
             })
         rows.sort(key=lambda a: -a["p"])
         predictor = {"r": T, "name": race_name_by_round.get(T, f"Round {T}"), "live": live,
                      "prevRounds": [r for r in (T - 2, T - 1) if r >= 1], "assets": rows}
 
+    # ── Team Calculator: each manager's team going into the next deadline ───
+    # Before a round locks that's round T itself, starting from their T-1 team;
+    # once T is under way it's T+1, starting from their T team (at T's prices
+    # until F1 publishes the new ones).
+    calc = None
+    if predictor:
+        T = predictor["r"]
+        target = T + 1 if predictor["live"] else T
+        start = target - 1
+        price_now = {a["id"]: a["p"] for a in predictor["assets"]}
+        rr = {(r, mid): (bal, subs, made, cost) for r, mid, bal, subs, made, cost in conn.execute(
+            "SELECT round, manager_id, team_balance, subs_allowed, transfers_made, extra_sub_cost "
+            "FROM race_results WHERE season=?", (season,))}
+        used = {}
+        for (mid, rnd), chip in chips.items():
+            used.setdefault(mid, []).append(chip)
+        mgrs = []
+        for mid, name in managers.items():
+            s = start
+            if chips.get((mid, s)) == "LL":   # Limitless: the team goes back afterwards
+                s -= 1
+            picks = [pid for (pid,) in conn.execute(
+                "SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=? "
+                "ORDER BY position", (season, s, mid))]
+            if not picks or (s, mid) not in rr:
+                continue
+            bal, subs, made, cost = rr[(s, mid)]
+            if (target, mid) in rr and rr[(target, mid)][1] is not None:
+                free = rr[(target, mid)][1]
+            else:   # 2 a round, plus 1 carried over if any went unused
+                free = min(3, 2 + (1 if (subs or 0) - (made or 0) > 0 else 0))
+            mgrs.append({"m": name, "picks": picks, "bank": round(bal or 0.0, 1),
+                         "budget": round((bal or 0.0) + sum(price_now.get(p, 0.0) for p in picks), 1),
+                         "free": free, "cost": cost or 10.0, "used": sorted(used.get(mid, []))})
+        mgrs.sort(key=lambda m: m["m"])
+        calc = {"r": target, "name": race_name_by_round.get(target, f"Round {target}"),
+                "pricesFrom": T, "managers": mgrs}
+
     colours = {k: [c, _ink(c)] for k, c in TEAM_COLOURS.items()}
-    return {"hindsight": hindsight, "predictor": predictor, "colours": colours}
+    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours}
 
 
 def _json(v):
@@ -198,7 +252,7 @@ def _json(v):
 
 def panel_tools(data):
     tools = data.get("tools") or {}
-    if not tools.get("hindsight") and not tools.get("predictor"):
+    if not tools.get("hindsight") and not tools.get("predictor") and not tools.get("calc"):
         return '<div class="card" style="padding:16px;color:#888">No data yet.</div>'
     return (TOOLS_HTML
             .replace("__TOOLS_DATA__", _json(tools))
@@ -240,12 +294,37 @@ TOOLS_HTML = r"""
 .tl-pp td small{display:block;font-size:9px;color:#666;font-weight:400}
 .tl-pp .lk{font-weight:600}
 .tl-up{color:#88dd44}.tl-dn{color:#ff7a7a}
+.tl-io{flex-basis:100%;font-size:10px;color:#888;margin-top:2px}
+.tl-sub button{padding:8px 4px}
 </style>
 <div class="tl-sub">
-  <button id="tlBtnH" class="on" onclick="tlShow('h')">Hindsight</button>
-  <button id="tlBtnP" onclick="tlShow('p')">Price predictor</button>
+  <button id="tlBtnC" class="on" onclick="tlShow('c')">Team calculator</button>
+  <button id="tlBtnH" onclick="tlShow('h')">Hindsight</button>
+  <button id="tlBtnP" onclick="tlShow('p')">Budget builder</button>
 </div>
-<div id="tlH">
+<div id="tlC">
+  <div class="tl-note" id="tlCNote"></div>
+  <div class="tl-ctl">
+    <div><label>Manager</label><select id="tcMgr"></select></div>
+    <div><label>Free transfers</label><select id="tcFree">
+      <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+      <option value="3">3</option><option value="99">Unlimited</option></select></div>
+    <div><label>Max budget ($M)</label><input id="tcBudget" type="number" step="0.1" inputmode="decimal"></div>
+    <div><label>Chip</label><select id="tcChip">
+      <option value="">None</option><option value="X3">Extra DRS (3x)</option>
+      <option value="WC">Wildcard</option><option value="LL">Limitless</option>
+      <option value="NN">No Negative</option><option value="AP">Auto Pilot</option></select></div>
+    <div style="grid-column:1/-1"><label>Count price changes as points</label><select id="tcW">
+      <option value="0">No, points only</option><option value="10">Yes, $1M = 10 pts</option>
+      <option value="20">Yes, $1M = 20 pts</option><option value="40">Yes, $1M = 40 pts</option></select></div>
+  </div>
+  <div class="tl-note" style="margin-bottom:2px">Expected points for the next race. Tap a driver or constructor to require it, again to leave it out, again to reset.</div>
+  <div class="tl-assets" id="tcAssets"></div>
+  <div id="tcCur" class="tl-cmp"></div>
+  <div class="card" style="padding:4px 12px" id="tcTeams"></div>
+  <button class="tl-more" id="tcMore">Show more teams</button>
+</div>
+<div id="tlH" style="display:none">
   <div class="tl-note">The best teams you could have picked for a past round, from the points every driver and constructor actually scored. Pick a manager to use their budget and compare with what they had.</div>
   <div class="tl-ctl">
     <div><label>Round</label><select id="tlRound"></select></div>
@@ -267,8 +346,8 @@ TOOLS_HTML = r"""
 const T=__TOOLS_DATA__, COL=__MANAGER_COLOURS__;
 const $=id=>document.getElementById(id);
 window.tlShow=function(w){
-  $('tlH').style.display=w==='h'?'':'none'; $('tlP').style.display=w==='p'?'':'none';
-  $('tlBtnH').classList.toggle('on',w==='h'); $('tlBtnP').classList.toggle('on',w==='p');
+  for(const k of ['c','h','p']){$('tl'+k.toUpperCase()).style.display=w===k?'':'none';
+    $('tlBtn'+k.toUpperCase()).classList.toggle('on',w===k);}
 };
 const fmt=(v,d=1)=>v==null?'—':(+v).toFixed(d);
 const sgn=v=>v==null?'—':(v>0?'+':'')+(+v).toFixed(1);
@@ -281,8 +360,12 @@ function combos(arr,k){const out=[];const n=arr.length;const idx=[...Array(k).ke
   if(n<k)return out;
   while(true){out.push(idx.map(i=>arr[i]));let i=k-1;while(i>=0&&idx[i]===n-k+i)i--;if(i<0)break;idx[i]++;for(let j=i+1;j<k;j++)idx[j]=idx[j-1]+1;}
   return out;}
+// With a starting team (o.start), transfers beyond o.free cost o.cost points
+// each (none on Wildcard or Limitless); o.w counts $1M of price change as that
+// many points when ranking.
 function bestTeams(assets,o){
   const val=a=>o.chip==='NN'?a.n:a.x;
+  const w=o.w||0;
   const ok=a=>!o.exc.has(a.id);
   const D=assets.filter(a=>a.t==='D'&&ok(a)), C=assets.filter(a=>a.t==='C'&&ok(a));
   const incD=D.filter(a=>o.inc.has(a.id)), incC=C.filter(a=>o.inc.has(a.id));
@@ -291,27 +374,89 @@ function bestTeams(assets,o){
     const v=s.map(val).sort((a,b)=>b-a);
     const base=v.reduce((a,b)=>a+b,0);
     const pts=o.chip==='X3'?base+2*v[0]+v[1]:base+v[0];
-    return {s,cost:s.reduce((a,b)=>a+b.p,0),pts,d:s.reduce((a,b)=>a+(b.d||0),0)};
-  }).sort((a,b)=>b.pts-a.pts);
+    const d=s.reduce((a,b)=>a+(b.d||0),0);
+    return {s,cost:s.reduce((a,b)=>a+b.p,0),pts,d,r:pts+w*d};
+  }).sort((a,b)=>b.r-a.r);
   const cs=combos(C,2).filter(s=>incC.every(a=>s.includes(a)));
   const top=[];let floor=-1e9;const N=o.n;
+  const free=o.chip==='WC'||o.chip==='LL'?99:(o.free==null?99:o.free);
   for(const c of cs){const cc=c[0].p+c[1].p, cp=val(c[0])+val(c[1]), cd=(c[0].d||0)+(c[1].d||0);
-    const left=budget-cc+1e-6;
-    for(const d of ds){ if(d.pts+cp<=floor&&top.length>=N)break;
+    const cr=cp+w*cd, left=budget-cc+1e-6;
+    for(const d of ds){ if(d.r+cr<=floor&&top.length>=N)break;
       if(d.cost>left)continue;
-      const t={c,d:d.s,pts:d.pts+cp,cost:cc+d.cost,dp:cd+d.d};
-      top.push(t);top.sort((a,b)=>b.pts-a.pts||a.cost-b.cost);
+      let tr=null,pen=0;
+      if(o.start){tr=c.concat(d.s).filter(a=>!o.start.has(a.id)).length;pen=Math.max(0,tr-free)*(o.cost||10);}
+      const score=d.r+cr-pen; if(score<=floor&&top.length>=N)continue;
+      const t={c,d:d.s,pts:d.pts+cp-pen,score,cost:cc+d.cost,dp:cd+d.d,tr,pen};
+      top.push(t);top.sort((a,b)=>b.score-a.score||a.cost-b.cost);
       if(top.length>N)top.pop();
-      if(top.length>=N)floor=top[top.length-1].pts;}}
+      if(top.length>=N)floor=top[top.length-1].score;}}
   return top;}
 function boosts(drivers,chip){const v=drivers.map(a=>[chip==='NN'?a.n:a.x,a.id]).sort((a,b)=>b[0]-a[0]);
   return chip==='X3'?{[v[0][1]]:'x3',[v[1][1]]:'x2'}:{[v[0][1]]:'x2'};}
-function teamRow(t,i,chip){
+function teamRow(t,i,chip,start,byId,dec){
   const b=boosts(t.d,chip);
   const codes=t.c.map(a=>`<span class="tl-code" style="${tc(a)}">${a.c}</span>`).join('')+
     t.d.slice().sort((a,b)=>(chip==='NN'?b.n-a.n:b.x-a.x)).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${a.c}${b[a.id]?' '+b[a.id]:''}</span>`).join('');
-  return `<div class="tl-team"><div class="tl-rank">${i+1}</div><div class="tl-codes">${codes}</div>
-    <div class="tl-num">${Math.round(t.pts)}<small>pts</small></div><div class="tl-num">${fmt(t.cost)}<small>${sgn(Math.round(t.dp*10)/10)}</small></div></div>`;}
+  let io='';
+  if(start){const ids=new Set(t.c.concat(t.d).map(a=>a.id));
+    const inn=t.c.concat(t.d).filter(a=>!start.has(a.id)).map(a=>a.c);
+    const out=[...start].filter(id=>!ids.has(id)).map(id=>byId[id]?byId[id].c:'?');
+    io=`<div class="tl-io">${inn.length?`In ${inn.join(' ')} · Out ${out.join(' ')}`:'No transfers'}${t.pen?` · <span class="tl-dn">−${t.pen} pts</span>`:''}</div>`;}
+  const pts=dec?t.pts.toFixed(1):Math.round(t.pts);
+  return `<div class="tl-team"><div class="tl-rank">${i+1}</div><div class="tl-codes">${codes}${io}</div>
+    <div class="tl-num">${pts}<small>pts</small></div><div class="tl-num">${fmt(t.cost)}<small>${sgn(Math.round(t.dp*10)/10)}</small></div></div>`;}
+
+// ── Team calculator ────────────────────────────────────────────────────────
+const C=T.calc, PA=(T.predictor||{}).assets||[];
+const CA=PA.map(a=>({id:a.id,c:a.c,t:a.t,k:a.k,p:a.p,x:a.xp,n:a.xn,d:a.xd}));
+const CById=Object.fromEntries(CA.map(a=>[a.id,a]));
+const cst={inc:new Set(),exc:new Set(),n:10};
+const cM=$('tcMgr'), cF=$('tcFree'), cB=$('tcBudget'), cC=$('tcChip'), cW=$('tcW');
+const CHIP={X3:'Extra DRS',WC:'Wildcard',LL:'Limitless',NN:'No Negative',AP:'Auto Pilot'};
+const CHIP_IDS={X3:['X3','DRS','EXTRA DRS','EXTRADRS'],WC:['WC','WILDCARD'],LL:['LL','LIMITLESS'],NN:['NN','NO NEGATIVE','NONEGATIVE'],AP:['AP','AUTO PILOT','AUTOPILOT']};
+function cMgr(){return C&&C.managers.find(m=>m.m===cM.value);}
+function cSetMgr(){const m=cMgr();
+  cB.value=(m?m.budget:100).toFixed(1); cF.value=m?String(Math.min(3,m.free)):'99';
+  [...cC.options].forEach(o=>{if(!o.value)return;
+    const u=!!m&&m.used.some(x=>CHIP_IDS[o.value].includes(String(x).toUpperCase()));
+    o.disabled=u; o.text=CHIP[o.value]+(o.value==='X3'?' (3x)':'')+(u?' (used)':'');});
+  if(cC.selectedOptions[0]&&cC.selectedOptions[0].disabled)cC.value='';}
+function cAssets(){
+  const sorted=CA.slice().sort((a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.p-a.p));
+  $('tcAssets').innerHTML=sorted.map((a,i)=>(i&&a.t!==sorted[i-1].t?'<div class="gap"></div>':'')+
+    `<button data-id="${a.id}" class="${cst.inc.has(a.id)?'inc':cst.exc.has(a.id)?'exc':''}" style="${tc(a)}">${a.c} <span style="font-weight:400;opacity:.75">${Math.round(a.x)}</span></button>`).join('');
+  $('tcAssets').querySelectorAll('button').forEach(b=>b.onclick=()=>{const id=b.dataset.id;
+    if(cst.inc.has(id)){cst.inc.delete(id);cst.exc.add(id);}else if(cst.exc.has(id)){cst.exc.delete(id);}else cst.inc.add(id);
+    cAssets();runC();});}
+function runC(){
+  if(!C||!CA.length){$('tcTeams').innerHTML='<div class="tl-note">No prices yet.</div>';return;}
+  const m=cMgr(); const start=m?new Set(m.picks):null;
+  const o={budget:parseFloat(cB.value)||100,chip:cC.value,inc:cst.inc,exc:cst.exc,n:cst.n,
+    w:+cW.value,start,free:+cF.value,cost:m?m.cost:10};
+  const top=bestTeams(CA,o);
+  $('tcTeams').innerHTML=top.length?`<div class="tl-team" style="padding:4px 0"><div></div><div class="tl-rank">TEAM</div><div class="tl-num"><small>xPTS</small></div><div class="tl-num"><small>COST / xΔ$</small></div></div>`+top.map((t,i)=>teamRow(t,i,o.chip,start,CById,true)).join('')
+    :'<div class="tl-note">No team fits that budget and those filters.</div>';
+  $('tcMore').style.display=top.length>=cst.n&&cst.n<50?'':'none';
+  if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);const col=COL[m.m]||'#ccc';
+    const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
+    let now=null;
+    if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});now=keep[0]?keep[0].pts:null;}
+    const b=D.length?boosts(D,o.chip):{};
+    $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team now: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
+      `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${a.c} ${Math.round(a.x)}</span>`).join('')}</div>`+
+      (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts on keeping this one, after any transfer penalty.</div>`:'');
+  } else $('tcCur').innerHTML='';
+}
+if(C){
+  $('tlCNote').innerHTML=`Best teams for <b>R${C.r} ${C.name}</b>, ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. xPts are each asset's average over its last 12 races${C.pricesFrom<C.r?`, at today's prices (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}. They don't know the track or this weekend's practice yet; a proper race simulation is planned.`;
+  cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
+  if(C.managers.some(m=>m.m==='Tim'))cM.value='Tim';
+}
+cSetMgr();cAssets();runC();
+cM.onchange=()=>{cSetMgr();runC();};
+[cF,cC,cW].forEach(e=>e.onchange=runC); cB.oninput=runC;
+$('tcMore').onclick=()=>{cst.n=Math.min(50,cst.n+10);runC();};
 
 // ── Hindsight ──────────────────────────────────────────────────────────────
 const H=T.hindsight||[];
@@ -352,7 +497,7 @@ bIn.oninput=runH; cSel.onchange=runH;
 $('tlMore').onclick=()=>{st.n=Math.min(50,st.n+10);runH();};
 fillMgr();setBudget();assetsBar();runH();
 
-// ── Price predictor ────────────────────────────────────────────────────────
+// ── Budget builder ────────────────────────────────────────────────────────
 const P=T.predictor;
 function ppTable(rows,tier,label){
   if(!rows.length)return '';

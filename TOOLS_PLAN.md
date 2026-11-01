@@ -10,9 +10,14 @@ where the data comes from, not the look and feel. Written 2026-10-31.
   (`player_gameday_stats`, `player_event_points`, `players.tla/active`). Hindsight matches
   F1FT's Austin result exactly (321 pts, same 7 picks, $131.8M). The predictor's odds come
   from recent form for now and land close to F1FT's (VER +0.24 vs +0.21, MCL +0.27 vs +0.28).
-- **Next:** the simulation, built on the 2026 data rather than left for 2027, then the Team
-  Calculator on top of it. Tim uses every part of F1FT, so Live Scoring, Statistics and
-  the analyzers follow after that.
+- **Built 2026-11-01:** the Team Calculator, on step A expected points (each asset's plain
+  average over its last 12 races: backtested on rounds 5-18, longer windows beat shorter
+  ones and weighting recent rounds made it worse; mean error 13.4 pts). "Price predictor"
+  renamed **Budget builder** (Tim), sorted by xΔ$ with a 0.0 column at the floor/cap like
+  F1FT; team colours on every pill.
+- **Next:** the simulation, built on the 2026 data rather than left for 2027; it replaces
+  the calculator's xPts and the budget builder's odds. Tim uses every part of F1FT, so
+  Live Scoring, Statistics and the analyzers follow after that.
 - **Elite Data is feasible:** `feeds/leaderboard/public/global/list_1_0_1.json` is public
   and lists the global top 500 with each player's current team (pick % in one call).
   DRS % and chips need the opponent team call per player, ~500 calls once per round
