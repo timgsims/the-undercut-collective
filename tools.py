@@ -599,13 +599,12 @@ function eliteView(){
   // F1FT's order: pick % highest first, then DRS %, then alphabetical.
   const rows=t=>e.assets.filter(a=>a.t===t).sort((a,b)=>b.pk-a.pk||(b.drs||0)-(a.drs||0)||a.c.localeCompare(b.c)).map(a=>{
     const d=a.lg==null?null:a.pk-a.lg;
-    const tag=a.lg===0&&a.pk>=25?'<small class="tl-up">none of us</small>':a.pk<5&&a.lg>=25?'<small class="tl-dn">top 500 avoid</small>':'';
-    return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span>${tag}</td><td>${pct(a.pk)}</td><td>${pct(a.drs)}</td><td>${a.lg==null?'—':a.lg+'%'}</td>
+    return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span></td><td>${pct(a.pk)}</td><td>${pct(a.drs)}</td><td>${a.lg==null?'—':a.lg+'%'}</td>
       <td class="${d==null?'':d>=15?'tl-up':d<=-15?'tl-dn':''}">${d==null?'—':(d>0?'+':'')+Math.round(d)}</td></tr>`;}).join('');
   const head=n=>`<tr><th>${n}</th><th>Top 500</th><th>DRS</th><th>League</th><th>Diff</th></tr>`;
   // As F1FT shows them: the share of teams that played each chip this round.
   const chips=e.nd?Object.entries(e.chips).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${pct(100*n/e.nd)}`).join(' · '):'';
-  el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % from all ${e.n} teams; DRS % (2x or 3x) and chips from the ${e.nd} whose full team we've read so far. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does. Tags: <i>none of us</i> = 25%+ of the top 500 have it and nobody in the league does; <i>top 500 avoid</i> = 25%+ of the league has it but under 5% of the top 500.</div>
+  el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % from all ${e.n} teams; DRS % (2x or 3x) and chips from the ${e.nd} whose full team we've read so far. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does.</div>
     <div class="tl-ctl" style="grid-template-columns:1fr"><div><label>Round</label><select id="tlERound">${E.slice().reverse().map(x=>`<option value="${x.r}" ${x.r===e.r?'selected':''}>R${x.r} ${x.name}</option>`).join('')}</select></div></div>
     ${e.nd?`<div class="tl-note" style="margin-top:0"><b>Chips played this round:</b> ${chips||'none'} <span style="color:#666">(share of the ${e.nd} teams read so far)</span></div>`:''}
     <div class="section-label">Drivers</div><table class="tl-pp">${head('Driver')}${rows('D')}</table>
