@@ -120,6 +120,33 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
   one copy per newly finalised round (newest 4 kept). To restore: stop
   `f1-fantasy-pipeline.timer`, copy a backup over `f1_data.db`, then start
   the timer. Prefer this over a wipe-and-refetch (see above).
+- **Push notifications (1 Nov 2026, Tim).** The 🔔 in the header opens
+  `push_ui.py`'s panel: turn them on per device, pick which manager you are,
+  switch each kind on or off. iPhones only get them in the app added to the
+  home screen. Three parts:
+  - `push-service/`: container `undercut-push` on Sentinel
+    (`/opt/docker/undercut-push`, Node, no dependencies, `webpush.js` copied
+    from Pit Wall). It holds the subscriptions (`data/push.db`, also the VAPID
+    key: **never change it**, every phone's sign-up is tied to it) and sends.
+    The site reaches it at `https://f1push.simsey.co.nz` (tunnel, no Access);
+    the pipeline at `127.0.0.1:3092/internal/send` with the token in
+    `secrets/push_token` (also the container's `.env`). `/internal/*` refuses
+    anything that came through Cloudflare. `GET /internal/stats` (same token)
+    lists devices and the last 30 sends. Deploy: copy `push-service/` to
+    `/opt/docker/undercut-push`, then `docker compose up -d --build`. Tests:
+    `node --test push-service/test/*.test.js`.
+  - `notify.py`, at the top of every `run_pipeline.sh` run (all modes, as the
+    lock reminder and new prices can fall outside race weekends): decides
+    what's due and sends each thing once (`notify_log`). Kinds: lock (2 h
+    before teams lock, from F1 Fantasy's schedule feed; 7:30pm the evening
+    before a lock in the night), fp1, inactive (a picked driver with
+    `players.active=0`), quali, final, prices, chips (4, 2 and 1 races left).
+    Nothing goes out 10pm-7:30am NZ; it waits for 7:30am unless stale by then.
+    `--dry-run` prints what would go (with `NOTIFY_NOW=<iso time>` to pretend
+    a time); `--mark-current` marks everything due now as sent without
+    sending (run it after restoring an old database).
+  - `sw.js` shows the notification and opens its link (`#tools` opens the
+    Tools tab; the page follows the hash).
 
 ---
 
