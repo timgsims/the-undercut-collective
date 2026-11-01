@@ -271,10 +271,10 @@ TOOLS_HTML = r"""
 .tl-ctl input{padding-right:9px}
 .tl-ctl select{background-image:linear-gradient(45deg,transparent 50%,#888 50%),linear-gradient(135deg,#888 50%,transparent 50%);background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px;background-repeat:no-repeat}
 .tl-note{font-size:11px;color:#777;line-height:1.45;margin:6px 0 10px}
-.tl-team{display:grid;grid-template-columns:22px 1fr 46px 40px;gap:6px;align-items:center;padding:8px 0;border-bottom:0.5px solid #2a2a2a}
+.tl-team{display:grid;grid-template-columns:16px 1fr 44px 40px;gap:4px;align-items:center;padding:8px 0;border-bottom:0.5px solid #2a2a2a}
 .tl-rank{font-size:11px;color:#666}
 .tl-codes{display:flex;flex-wrap:wrap;gap:3px}
-.tl-code{font-size:11px;font-weight:600;padding:2px 5px;border-radius:5px;background:#252525;color:#ddd;white-space:nowrap}
+.tl-code{display:inline-block;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;padding:2px 5px;border-radius:5px;background:#252525;color:#ddd;white-space:nowrap}
 .tl-code.x2{box-shadow:0 0 0 2px #88dd44}
 .tl-code.x3{box-shadow:0 0 0 2px #ffaa44}
 .tl-codes .tl-code.x2,.tl-codes .tl-code.x3{margin:0 2px}
@@ -285,6 +285,12 @@ TOOLS_HTML = r"""
 .tl-assets button.inc{box-shadow:0 0 0 2px #88dd44;margin:0 2px}
 .tl-assets button.exc{opacity:.3;text-decoration:line-through}
 .tl-assets .gap{flex-basis:100%;height:6px}
+.tl-k{display:inline-block;width:2.4em;text-align:center}
+.tl-v.b{width:1.5em}
+.tl-team .tl-code{font-size:10px;padding:2px 4px}
+.tl-team .tl-k{width:2.2em}
+.tl-v{display:inline-block;width:2.3em;text-align:right;font-variant-numeric:tabular-nums}
+.tl-assets button{font-variant-numeric:tabular-nums}
 .tl-cmp{font-size:13px;line-height:1.5;padding:10px 0}
 .tl-more{width:100%;margin:10px 0 4px;font-size:13px;padding:8px;border-radius:8px;border:0.5px solid #333;background:#1a1a1a;color:#aaa;cursor:pointer}
 .tl-pp{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
@@ -352,6 +358,8 @@ window.tlShow=function(w){
 const fmt=(v,d=1)=>v==null?'—':(+v).toFixed(d);
 const sgn=v=>v==null?'—':(v>0?'+':'')+(+v).toFixed(1);
 const TC=T.colours||{};
+// Same-width pills: the code and the number each get a fixed-width box.
+const K=a=>`<span class="tl-k">${a.c}</span>`, V=v=>`<span class="tl-v">${v}</span>`;
 const tc=a=>{const c=TC[a.k];return c?`background:${c[0]};color:${c[1]}`:'';};
 
 // ── Team search: every 5-driver + 2-constructor team under budget. DRS (2x)
@@ -396,8 +404,8 @@ function boosts(drivers,chip){const v=drivers.map(a=>[chip==='NN'?a.n:a.x,a.id])
   return chip==='X3'?{[v[0][1]]:'x3',[v[1][1]]:'x2'}:{[v[0][1]]:'x2'};}
 function teamRow(t,i,chip,start,byId,dec){
   const b=boosts(t.d,chip);
-  const codes=t.c.map(a=>`<span class="tl-code" style="${tc(a)}">${a.c}</span>`).join('')+
-    t.d.slice().sort((a,b)=>(chip==='NN'?b.n-a.n:b.x-a.x)).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${a.c}${b[a.id]?' '+b[a.id]:''}</span>`).join('');
+  const codes=t.c.map(a=>`<span class="tl-code" style="${tc(a)}">${K(a)}</span>`).join('')+
+    t.d.slice().sort((a,b)=>(chip==='NN'?b.n-a.n:b.x-a.x)).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${b[a.id]?`<span class="tl-v b">${b[a.id]}</span>`:''}</span>`).join('');
   let io='';
   if(start){const ids=new Set(t.c.concat(t.d).map(a=>a.id));
     const inn=t.c.concat(t.d).filter(a=>!start.has(a.id)).map(a=>a.c);
@@ -425,7 +433,7 @@ function cSetMgr(){const m=cMgr();
 function cAssets(){
   const sorted=CA.slice().sort((a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.p-a.p));
   $('tcAssets').innerHTML=sorted.map((a,i)=>(i&&a.t!==sorted[i-1].t?'<div class="gap"></div>':'')+
-    `<button data-id="${a.id}" class="${cst.inc.has(a.id)?'inc':cst.exc.has(a.id)?'exc':''}" style="${tc(a)}">${a.c} <span style="font-weight:400;opacity:.75">${Math.round(a.x)}</span></button>`).join('');
+    `<button data-id="${a.id}" class="${cst.inc.has(a.id)?'inc':cst.exc.has(a.id)?'exc':''}" style="${tc(a)}">${K(a)}<span class="tl-v" style="font-weight:400;opacity:.75">${Math.round(a.x)}</span></button>`).join('');
   $('tcAssets').querySelectorAll('button').forEach(b=>b.onclick=()=>{const id=b.dataset.id;
     if(cst.inc.has(id)){cst.inc.delete(id);cst.exc.add(id);}else if(cst.exc.has(id)){cst.exc.delete(id);}else cst.inc.add(id);
     cAssets();runC();});}
@@ -444,7 +452,7 @@ function runC(){
     if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});now=keep[0]?keep[0].pts:null;}
     const b=D.length?boosts(D,o.chip):{};
     $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team now: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
-      `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${a.c} ${Math.round(a.x)}</span>`).join('')}</div>`+
+      `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${V(Math.round(a.x))}</span>`).join('')}</div>`+
       (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
@@ -472,7 +480,7 @@ function setBudget(){const m=mgr();bIn.value=(m&&m.budget?m.budget:100).toFixed(
 function assetsBar(){const h=round();if(!h){$('tlAssets').innerHTML='';return;}
   const sorted=h.assets.slice().sort((a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.p-a.p));
   $('tlAssets').innerHTML=sorted.map((a,i)=>(i&&a.t!==sorted[i-1].t?'<div class="gap"></div>':'')+
-    `<button data-id="${a.id}" class="${st.inc.has(a.id)?'inc':st.exc.has(a.id)?'exc':''}" style="${tc(a)}">${a.c} <span style="font-weight:400;opacity:.75">${a.x}</span></button>`).join('');
+    `<button data-id="${a.id}" class="${st.inc.has(a.id)?'inc':st.exc.has(a.id)?'exc':''}" style="${tc(a)}">${K(a)}<span class="tl-v" style="font-weight:400;opacity:.75">${a.x}</span></button>`).join('');
   $('tlAssets').querySelectorAll('button').forEach(b=>b.onclick=()=>{const id=b.dataset.id;
     if(st.inc.has(id)){st.inc.delete(id);st.exc.add(id);}else if(st.exc.has(id)){st.exc.delete(id);}else st.inc.add(id);
     assetsBar();runH();});}
@@ -488,7 +496,7 @@ function runH(){
     const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
     const mine=m.picks.map(id=>byId[id]).filter(Boolean);
     const cost=mine.reduce((a,b)=>a+b.p,0);
-    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.map(a=>`<span class="tl-code ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}" style="${tc(a)}">${a.c} ${a.x}</span>`).join('')}</div>`;
+    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.map(a=>`<span class="tl-code ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}" style="${tc(a)}">${K(a)}${V(a.x)}</span>`).join('')}</div>`;
   } else $('tlCmp').innerHTML='';
 }
 rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;fillMgr();setBudget();assetsBar();runH();};
@@ -521,7 +529,7 @@ function ppTable(rows,tier,label){
       const need=c.lo==null&&c.hi==null?'any':c.lo==null?`&lt;${Math.ceil(c.hi)}`:`${Math.ceil(c.lo)}+`;
       const pct=Math.round(c.p*100);
       return `<td class="${pct===best?'lk':''}">${pct}%<small>${need}</small></td>`;}).join('');
-    return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${a.c}</span></td><td>${fmt(a.p)}</td>${a.prev.map(([r,x])=>`<td>${x==null?'—':Math.round(x)}</td>`).join('')}${cells}<td class="${a.xd>0.04?'tl-up':a.xd<-0.04?'tl-dn':''}">${a.xd>0?'+':''}${a.xd.toFixed(2)}</td></tr>`;}).join('')+'</table>';}
+    return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span></td><td>${fmt(a.p)}</td>${a.prev.map(([r,x])=>`<td>${x==null?'—':Math.round(x)}</td>`).join('')}${cells}<td class="${a.xd>0.04?'tl-up':a.xd<-0.04?'tl-dn':''}">${a.xd>0?'+':''}${a.xd.toFixed(2)}</td></tr>`;}).join('')+'</table>';}
 if(P){
   const A=P.assets, grp=(t,hi)=>A.filter(a=>a.t===t&&(hi?a.p>=18.5:a.p<18.5));
   $('tlP').innerHTML=`<div class="tl-note">Price changes after <b>R${P.r} ${P.name}</b>${P.live?' (weekend in progress)':''}. Each percentage is the chance of that price move; underneath is the points it takes. Sorted by expected price change (xΔ$), best first; 0.0 is for an asset at the $3M floor or $34M cap. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.
