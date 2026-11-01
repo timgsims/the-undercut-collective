@@ -6,6 +6,8 @@ Fetches into f1_data.db, cached so each run only asks for what's new:
   hist_quali     every qualifying session 2022 onwards (Jolpica): Q1/Q2/Q3
   practice_laps  this season's practice and qualifying laps per driver
                  (OpenF1): best lap and long-run average per session
+  starting_grid  the race's starting grid with penalties applied (OpenF1,
+                 published after qualifying and refetched until the race)
 
 2022 is the start of the current car rules, so older seasons say little about
 how hard a track is to pass on. Run on its own: python3 sim_data.py
@@ -48,6 +50,9 @@ CREATE TABLE IF NOT EXISTS hist_rounds (
 CREATE TABLE IF NOT EXISTS practice_laps (
     season INTEGER, round INTEGER, session TEXT, code TEXT, best REAL,
     long_run REAL, laps INTEGER, PRIMARY KEY (season, round, session, code));
+CREATE TABLE IF NOT EXISTS starting_grid (
+    season INTEGER, round INTEGER, code TEXT, pos INTEGER, fetched_at TEXT,
+    PRIMARY KEY (season, round, code));
 CREATE TABLE IF NOT EXISTS fetch_marks (key TEXT PRIMARY KEY, at TEXT);
 """
 
@@ -171,6 +176,8 @@ def fetch_practice(conn, season, rnd, date):
         name = s["session_name"]
         if not (name.startswith("Practice") or name in ("Qualifying", "Sprint Qualifying", "Sprint Shootout")):
             continue
+        if name == "Qualifying":
+            fetch_grid(conn, season, rnd, s["session_key"])
         key = f"practice:{season}:{rnd}:{name}"
         if marked(conn, key):
             continue
@@ -198,6 +205,27 @@ def fetch_practice(conn, season, rnd, date):
         n += 1
         time.sleep(0.4)
     return n
+
+
+def fetch_grid(conn, season, rnd, quali_key):
+    """OpenF1's starting grid (keyed by the qualifying session): qualifying
+    order with grid penalties applied. Refetched every run until the race,
+    as penalties can land late. Checked on Austin 2026: matches the real grid
+    for 21 of 22 cars (the miss was a pit-lane start decided on race day)."""
+    try:
+        grid = get(f"{OPENF1}/starting_grid?session_key={quali_key}")
+    except urllib.error.HTTPError:
+        return
+    if not grid:
+        return
+    num = {d["driver_number"]: d["name_acronym"] for d in get(f"{OPENF1}/drivers?session_key={quali_key}")}
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    conn.execute("DELETE FROM starting_grid WHERE season=? AND round=?", (season, rnd))
+    for g in grid:
+        if g.get("driver_number") in num and g.get("position"):
+            conn.execute("INSERT OR REPLACE INTO starting_grid VALUES (?,?,?,?,?)",
+                         (season, rnd, num[g["driver_number"]], int(g["position"]), now))
+    conn.commit()
 
 
 def update(conn, current_season, practice_rounds=None):

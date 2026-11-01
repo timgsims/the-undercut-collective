@@ -1,4 +1,3 @@
 {
-  "_help": "Hand inputs for sim.py, keyed season-round. grid_penalty: places dropped from the qualifying position; back: starts from the back; pace: % of lap time added (+ slower, - faster), e.g. for damage or upgrades.",
-  "2026-19": {"grid_penalty": {"VER": 1, "LAW": 1, "BOR": 5}, "back": ["BOT"]}
+  "_help": "Hand inputs for sim.py, keyed season-round. Once qualifying is done the sim uses OpenF1's official starting grid (sim_data.py); these are for before that, or to correct it. grid_penalty: places dropped from the qualifying position; back: starts from the back; grid: the full grid as a list of codes (wins over OpenF1's); pace: % of lap time added (+ slower, - faster), e.g. for damage or upgrades."
 }

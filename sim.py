@@ -47,6 +47,8 @@ P = {
     "sprint_sd": 0.7,      # sprint race noise, as a share of the race's
     "fp_weight": 0.15,     # weight of each practice session's pace (max 3)
     "q_weight": 0.3,       # weight of this weekend's qualifying in race pace
+    "lr_weight": 0.0,      # weight of FP2 long runs vs one-lap pace: off, as 0.2-0.7 all
+                           # made the 2026 backtest worse (12.74 -> 12.78-13.47)
     "dnf_prior": 6,        # starts of league-average reliability a team starts from
     "ot_prior": 4,         # races of field-average overtakes a driver starts from
     "ot_gain": 0.25,       # extra overtakes per place gained
@@ -160,6 +162,37 @@ def practice_pace(conn, season, rnd, sessions):
         best = min(b for _, b in rows)
         out.append({c: min(P["gap_cap"], (b / best - 1) * 100) for c, b in rows})
     return out
+
+
+def long_run_adjust(conn, season, rnd, sessions, keys):
+    """Per team, % by which its practice long-run pace (gap to the best team)
+    is worse than its best-lap pace, averaged over the sessions given. Fuel
+    loads and tyres differ between teams' runs, so this is noisy; the weight
+    on it (P["lr_weight"]) is set by the backtest."""
+    teams = {t for _, t in keys}
+    code_team = {c: t for c, t in keys}
+    out = collections.defaultdict(list)
+    for s in sessions:
+        rows = conn.execute("SELECT code, best, long_run FROM practice_laps WHERE season=? AND round=? "
+                            "AND session=?", (season, rnd, s)).fetchall()
+        lr, bl = collections.defaultdict(list), collections.defaultdict(list)
+        for code, best, lrun in rows:
+            t = code_team.get(code)
+            if t and best:
+                bl[t].append(best)
+                if lrun:
+                    lr[t].append(lrun)
+        both = [t for t in teams if lr.get(t) and bl.get(t)]
+        if len(both) < 9:
+            continue
+        lr_t = {t: sum(lr[t]) / len(lr[t]) for t in both}
+        bl_t = {t: min(bl[t]) for t in both}
+        lr0, bl0 = min(lr_t.values()), min(bl_t.values())
+        d = {t: (lr_t[t] / lr0 - 1) * 100 - (bl_t[t] / bl0 - 1) * 100 for t in both}
+        mid = statistics.median(d.values())   # relative to the field, not the best team
+        for t in both:
+            out[t].append(max(-1.0, min(1.0, d[t] - mid)))
+    return {t: sum(v) / len(v) for t, v in out.items()}
 
 
 def track_shuffle(conn, circuit, kind="race"):
@@ -301,7 +334,16 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
                 known_grid = {k: (grows.get(k) or 22) for k in keys}
                 known_grid = {k: (22 if g == 0 else g) for k, g in known_grid.items()}
             else:
-                known_grid = grid_from_quali(known_q, ov, keys)
+                known_grid = official_grid(conn, season, rnd, keys, ov) or grid_from_quali(known_q, ov, keys)
+
+    # Race pace: one-lap pace, adjusted by how much better or worse each team
+    # looked on practice long runs than on its best laps.
+    rpace = dict(pace)
+    # Only FP2: it's where teams run their race simulations. FP1/FP3 "long
+    # runs" are mostly light-fuel and made the backtest worse.
+    adj = long_run_adjust(conn, season, rnd, [s for s in sess if s == "Practice 2"], keys)
+    for k in keys:
+        rpace[k] += P["lr_weight"] * adj.get(k[1], 0.0)
 
     shuffle, avg_abs = track_shuffle(conn, circuit)
     dnf, dnf_avg = dnf_rates(conn, season, rnd)
@@ -323,7 +365,7 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
     # grid) matches the track's history.
     target = avg_abs * shuffle
     slot = P["slot"]
-    sd = calibrate_sd(pace, keys, target, rng, slot, known_grid)
+    sd = calibrate_sd(pace, rpace, keys, target, rng, slot, known_grid)
 
     out = {pid: [] for pid, _, _ in drivers}
     out.update({c: [] for c in cons})
@@ -336,12 +378,12 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
             qt = sorted(keys, key=lambda k: pace[k] + rng.gauss(0, P["sd_quali"]))
             qpos = {k: i + 1 for i, k in enumerate(qt)}
         grid = known_grid or grid_from_quali(qpos, ov, keys)
-        res = race(keys, pace, grid, slot, sd, dnf, dnf_avg, ot_mean, flw, rng, team_of)
+        res = race(keys, rpace, grid, slot, sd, dnf, dnf_avg, ot_mean, flw, rng, team_of)
         sres = None
         if sprint:
             sq = sorted(keys, key=lambda k: pace[k] + rng.gauss(0, P["sd_quali"]))
             sgrid = {k: i + 1 for i, k in enumerate(sq)}
-            sres = race(keys, pace, sgrid, slot, sd * P["sprint_sd"], dnf, dnf_avg, sot_mean, flw, rng, team_of,
+            sres = race(keys, rpace, sgrid, slot, sd * P["sprint_sd"], dnf, dnf_avg, sot_mean, flw, rng, team_of,
                         sprint=True)
         team_pts = collections.defaultdict(float)
         team_q = collections.defaultdict(list)
@@ -359,6 +401,24 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
     meta = {"circuit": circuit, "sprint": bool(sprint), "after": after, "shuffle": round(shuffle, 2),
             "sd": round(sd, 3), "pace": {f"{k[0]}": round(v, 3) for k, v in pace.items()}}
     return out, meta
+
+
+def official_grid(conn, season, rnd, keys, ov):
+    """The starting grid OpenF1 publishes after qualifying (penalties
+    applied), if it covers the whole field. sim_overrides.json "grid" (a list
+    of codes in grid order) wins over it, for late changes."""
+    if ov.get("grid"):
+        order = {c: i + 1 for i, c in enumerate(ov["grid"])}
+    else:
+        try:
+            order = dict(conn.execute("SELECT code, pos FROM starting_grid WHERE season=? AND round=?",
+                                      (season, rnd)))
+        except sqlite3.OperationalError:
+            return None
+    if not all(k[0] in order for k in keys):
+        return None
+    ranked = sorted(keys, key=lambda k: order[k[0]])
+    return {k: i + 1 for i, k in enumerate(ranked)}
 
 
 def grid_from_quali(qpos, ov, keys):
@@ -404,7 +464,7 @@ def poisson(rng, lam):
         k += 1
 
 
-def calibrate_sd(pace, keys, target, rng, slot, known_grid=None):
+def calibrate_sd(pace, rpace, keys, target, rng, slot, known_grid=None):
     """Race noise (in % of lap time) that makes the mean |finish - grid| of
     finishers match the track's history."""
     def mean_abs(sd, n=150):
@@ -415,7 +475,7 @@ def calibrate_sd(pace, keys, target, rng, slot, known_grid=None):
             else:
                 qt = sorted(keys, key=lambda k: pace[k] + rng.gauss(0, P["sd_quali"]))
                 grid = {k: i + 1 for i, k in enumerate(qt)}
-            perf = sorted(keys, key=lambda k: pace[k] + rng.gauss(0, sd) + slot * (grid[k] - 1))
+            perf = sorted(keys, key=lambda k: rpace[k] + rng.gauss(0, sd) + slot * (grid[k] - 1))
             tot += sum(abs(grid[k] - (i + 1)) for i, k in enumerate(perf))
             cnt += len(perf)
         return tot / cnt
@@ -455,6 +515,13 @@ def save(conn, season, rnd, after, out, meta):
                      (season, rnd, pid, after, s["xpts"], s["xnn"], s["sd"], json.dumps(s["hist"]), now))
     conn.execute("INSERT OR REPLACE INTO sim_runs VALUES (?,?,?,?,?)",
                  (season, rnd, after, json.dumps(meta), now))
+    # The latest prediction at each stage, kept for sim_accuracy.py.
+    conn.execute("""CREATE TABLE IF NOT EXISTS sim_history (
+        season INTEGER, round INTEGER, after TEXT, player_id TEXT, xpts REAL, made_at TEXT,
+        PRIMARY KEY (season, round, after, player_id))""")
+    for pid, samples in out.items():
+        conn.execute("INSERT OR REPLACE INTO sim_history VALUES (?,?,?,?,?,?)",
+                     (season, rnd, after, pid, round(sum(samples) / len(samples), 2), now))
     conn.commit()
 
 

@@ -31,8 +31,21 @@ where the data comes from, not the look and feel. Written 2026-10-31.
   - Hand inputs (grid penalties, pace tweaks) go in `sim_overrides.json`.
   - Runs from `run_pipeline.sh` every full run, for the Budget builder's round and the
     next one once that weekend is under way.
-- **Next:** score each weekend's predictions (ours and F1FT's) against real points;
-  long-run race pace from practice; then Live Scoring, Statistics and the analyzers.
+- **Built 2026-11-01 (evening):**
+  - **Official starting grid:** after qualifying, `sim_data.py` pulls OpenF1's
+    `starting_grid` (penalties applied; matched Austin's real grid for 21 of 22 cars),
+    refetched each run until the race, and the sim uses it. OpenF1's race control
+    messages don't carry most grid penalties (power-unit ones are FIA documents), so
+    before qualifying, known penalties still go in `sim_overrides.json` by hand.
+  - **Accuracy check:** `sim_accuracy.py [round]` scores our predictions at each stage
+    (`sim_history`), the 12-race average and F1FT's (snapshots saved by hand on
+    Sentinel in `~/f1ft-snapshots/<season>-<round>.json`, not in this public repo).
+  - **Practice long runs:** built (`sim.long_run_adjust`, FP2 only, centred on the
+    field) but switched off: every weight from 0.2 to 0.7 made the backtest worse.
+- **Decided (Tim, 2026-11-01):** only add tools the dashboard doesn't already have. League
+  ownership and chip usage exist already (Team Picks, Stats), so the next tool is Elite
+  Data, shown against league ownership for differentials. Live Scoring and Statistics
+  are covered by the dashboard.
 - **Elite Data is feasible:** `feeds/leaderboard/public/global/list_1_0_1.json` is public
   and lists the global top 500 with each player's current team (pick % in one call).
   DRS % and chips need the opponent team call per player, ~500 calls once per round
