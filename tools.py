@@ -47,19 +47,47 @@ def _norm_cdf(x, mean, sd):
     return 0.5 * (1 + math.erf((x - mean) / (sd * math.sqrt(2))))
 
 
+# Team colours by F1 Fantasy team id (a constructor's id is its team id).
+# F1's 2026 team colours; Audi and Cadillac picked to stay apart from
+# Ferrari and Haas.
+TEAM_COLOURS = {
+    "27": "#F47600",    # McLaren
+    "28": "#00D7B6",    # Mercedes
+    "29": "#4781D7",    # Red Bull Racing
+    "25": "#ED1131",    # Ferrari
+    "23": "#00A1E8",    # Alpine
+    "24": "#229971",    # Aston Martin
+    "210": "#1868DB",   # Williams
+    "2636": "#6C98FF",  # Racing Bulls
+    "26": "#9C9FA2",    # Haas
+    "2640": "#8A0F2A",  # Audi
+    "2641": "#D8D8D8",  # Cadillac
+}
+
+
+def _ink(hex_colour):
+    """Black or white text, whichever reads better on the colour."""
+    r, g, b = (int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return "#111" if lum > 0.5 else "#fff"
+
+
 def read_tools_data(conn, season, race_name_by_round):
     """Everything the Tools tab needs, as plain JSON-able data."""
     pcols = {r[1] for r in conn.execute("PRAGMA table_info(players)")}
     has_tla = "tla" in pcols and "active" in pcols
+    has_team = "team_id" in pcols
     players = {}
     for row in conn.execute(
-        "SELECT id, name, type" + (", tla, active" if has_tla else ", NULL, 1") + " FROM players"
+        "SELECT id, name, type" + (", tla, active" if has_tla else ", NULL, 1")
+        + (", team_id" if has_team else ", NULL") + " FROM players"
     ):
-        pid, name, ptype, tla, active = row
+        pid, name, ptype, tla, active, team = row
         if ptype not in ("driver", "constructor"):
             continue
         code = tla or (name or pid).replace(".", "").split()[-1][:3].upper()
-        players[pid] = {"code": code, "name": name, "type": ptype, "active": active != 0}
+        players[pid] = {"code": code, "name": name, "type": ptype, "active": active != 0,
+                        "team": team or (pid if ptype == "constructor" else None)}
 
     try:
         played = {(r, pid): bool(p) for r, pid, p in conn.execute(
@@ -102,7 +130,7 @@ def read_tools_data(conn, season, race_name_by_round):
                 continue
             nxt = res.get((r + 1, pid), (None, None, None))[2]
             assets.append({
-                "id": pid, "c": p["code"], "t": "C" if p["type"] == "constructor" else "D",
+                "id": pid, "c": p["code"], "t": "C" if p["type"] == "constructor" else "D", "k": p["team"],
                 "p": round(price, 1), "x": pts, "n": nn if nn is not None else max(0.0, pts),
                 "d": round(nxt - price, 1) if nxt is not None else None,
             })
@@ -151,7 +179,7 @@ def read_tools_data(conn, season, race_name_by_round):
             cdf = [_norm_cdf(x - 0.5, mean, sd) for x in needs]
             probs = [cdf[0], cdf[1] - cdf[0], cdf[2] - cdf[1], 1 - cdf[2]]
             rows.append({
-                "c": p["code"], "t": "C" if p["type"] == "constructor" else "D",
+                "c": p["code"], "t": "C" if p["type"] == "constructor" else "D", "k": p["team"],
                 "p": round(price, 1), "prev": prev, "needs": needs, "steps": steps,
                 "probs": [round(x, 3) for x in probs], "mean": round(mean, 1),
                 "xd": round(sum(pr * s for pr, s in zip(probs, steps)), 2),
@@ -160,7 +188,8 @@ def read_tools_data(conn, season, race_name_by_round):
         predictor = {"r": T, "name": race_name_by_round.get(T, f"Round {T}"), "live": live,
                      "prevRounds": [r for r in (T - 2, T - 1) if r >= 1], "assets": rows}
 
-    return {"hindsight": hindsight, "predictor": predictor}
+    colours = {k: [c, _ink(c)] for k, c in TEAM_COLOURS.items()}
+    return {"hindsight": hindsight, "predictor": predictor, "colours": colours}
 
 
 def _json(v):
@@ -192,15 +221,16 @@ TOOLS_HTML = r"""
 .tl-rank{font-size:11px;color:#666}
 .tl-codes{display:flex;flex-wrap:wrap;gap:3px}
 .tl-code{font-size:11px;font-weight:600;padding:2px 5px;border-radius:5px;background:#252525;color:#ddd;white-space:nowrap}
-.tl-code.c{background:#1e2a36;color:#9cc8f0}
-.tl-code.x2{background:#1a3010;color:#88dd44}
-.tl-code.x3{background:#3a2a00;color:#ffaa44}
+.tl-code.x2{box-shadow:0 0 0 2px #88dd44}
+.tl-code.x3{box-shadow:0 0 0 2px #ffaa44}
+.tl-codes .tl-code.x2,.tl-codes .tl-code.x3{margin:0 2px}
 .tl-num{text-align:right;font-size:13px;font-variant-numeric:tabular-nums}
 .tl-num small{display:block;font-size:10px;color:#777}
 .tl-assets{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 8px}
 .tl-assets button{font-size:11px;font-weight:600;padding:4px 6px;border-radius:6px;border:0.5px solid #333;background:#1a1a1a;color:#aaa;cursor:pointer}
-.tl-assets button.inc{background:#1a3010;color:#88dd44;border-color:#2f5a1a}
-.tl-assets button.exc{background:#3a1414;color:#ff7a7a;border-color:#5a2020;text-decoration:line-through}
+.tl-assets button.inc{box-shadow:0 0 0 2px #88dd44;margin:0 2px}
+.tl-assets button.exc{opacity:.3;text-decoration:line-through}
+.tl-assets .gap{flex-basis:100%;height:6px}
 .tl-cmp{font-size:13px;line-height:1.5;padding:10px 0}
 .tl-more{width:100%;margin:10px 0 4px;font-size:13px;padding:8px;border-radius:8px;border:0.5px solid #333;background:#1a1a1a;color:#aaa;cursor:pointer}
 .tl-pp{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
@@ -242,6 +272,8 @@ window.tlShow=function(w){
 };
 const fmt=(v,d=1)=>v==null?'—':(+v).toFixed(d);
 const sgn=v=>v==null?'—':(v>0?'+':'')+(+v).toFixed(1);
+const TC=T.colours||{};
+const tc=a=>{const c=TC[a.k];return c?`background:${c[0]};color:${c[1]}`:'';};
 
 // ── Team search: every 5-driver + 2-constructor team under budget. DRS (2x)
 // goes on the best driver; Extra DRS puts 3x on the best and 2x on the next.
@@ -276,8 +308,8 @@ function boosts(drivers,chip){const v=drivers.map(a=>[chip==='NN'?a.n:a.x,a.id])
   return chip==='X3'?{[v[0][1]]:'x3',[v[1][1]]:'x2'}:{[v[0][1]]:'x2'};}
 function teamRow(t,i,chip){
   const b=boosts(t.d,chip);
-  const codes=t.c.map(a=>`<span class="tl-code c">${a.c}</span>`).join('')+
-    t.d.slice().sort((a,b)=>(chip==='NN'?b.n-a.n:b.x-a.x)).map(a=>`<span class="tl-code ${b[a.id]||''}">${a.c}${b[a.id]?' '+b[a.id]:''}</span>`).join('');
+  const codes=t.c.map(a=>`<span class="tl-code" style="${tc(a)}">${a.c}</span>`).join('')+
+    t.d.slice().sort((a,b)=>(chip==='NN'?b.n-a.n:b.x-a.x)).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${a.c}${b[a.id]?' '+b[a.id]:''}</span>`).join('');
   return `<div class="tl-team"><div class="tl-rank">${i+1}</div><div class="tl-codes">${codes}</div>
     <div class="tl-num">${Math.round(t.pts)}<small>pts</small></div><div class="tl-num">${fmt(t.cost)}<small>${sgn(Math.round(t.dp*10)/10)}</small></div></div>`;}
 
@@ -294,7 +326,8 @@ function mgr(){const h=round();return h&&h.teams.find(t=>t.m===mSel.value);}
 function setBudget(){const m=mgr();bIn.value=(m&&m.budget?m.budget:100).toFixed(1);}
 function assetsBar(){const h=round();if(!h){$('tlAssets').innerHTML='';return;}
   const sorted=h.assets.slice().sort((a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.p-a.p));
-  $('tlAssets').innerHTML=sorted.map(a=>`<button data-id="${a.id}" class="${st.inc.has(a.id)?'inc':st.exc.has(a.id)?'exc':''}">${a.c} <span style="font-weight:400;color:#888">${a.x}</span></button>`).join('');
+  $('tlAssets').innerHTML=sorted.map((a,i)=>(i&&a.t!==sorted[i-1].t?'<div class="gap"></div>':'')+
+    `<button data-id="${a.id}" class="${st.inc.has(a.id)?'inc':st.exc.has(a.id)?'exc':''}" style="${tc(a)}">${a.c} <span style="font-weight:400;opacity:.75">${a.x}</span></button>`).join('');
   $('tlAssets').querySelectorAll('button').forEach(b=>b.onclick=()=>{const id=b.dataset.id;
     if(st.inc.has(id)){st.inc.delete(id);st.exc.add(id);}else if(st.exc.has(id)){st.exc.delete(id);}else st.inc.add(id);
     assetsBar();runH();});}
@@ -310,7 +343,7 @@ function runH(){
     const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
     const mine=m.picks.map(id=>byId[id]).filter(Boolean);
     const cost=mine.reduce((a,b)=>a+b.p,0);
-    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.map(a=>`<span class="tl-code ${a.t==='C'?'c':''} ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}">${a.c} ${a.x}</span>`).join('')}</div>`;
+    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.map(a=>`<span class="tl-code ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}" style="${tc(a)}">${a.c} ${a.x}</span>`).join('')}</div>`;
   } else $('tlCmp').innerHTML='';
 }
 rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;fillMgr();setBudget();assetsBar();runH();};
@@ -331,7 +364,7 @@ function ppTable(rows,tier,label){
   rows.map(a=>{const cells=a.probs.map((p,i)=>{const need=i===0?`&lt;${Math.ceil(a.needs[0])}`:`${Math.ceil(a.needs[i-1])}+`;
       const pct=Math.round(p*100);const lk=pct===Math.max(...a.probs.map(x=>Math.round(x*100)));
       return `<td class="${lk?'lk':''}">${pct}%<small>${need}</small></td>`;}).join('');
-    return `<tr><td class="lk">${a.c}</td><td>${fmt(a.p)}</td>${a.prev.map(([r,x])=>`<td>${x==null?'—':Math.round(x)}</td>`).join('')}${cells}<td class="${a.xd>0.04?'tl-up':a.xd<-0.04?'tl-dn':''}">${a.xd>0?'+':''}${a.xd.toFixed(2)}</td></tr>`;}).join('')+'</table>';}
+    return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${a.c}</span></td><td>${fmt(a.p)}</td>${a.prev.map(([r,x])=>`<td>${x==null?'—':Math.round(x)}</td>`).join('')}${cells}<td class="${a.xd>0.04?'tl-up':a.xd<-0.04?'tl-dn':''}">${a.xd>0?'+':''}${a.xd.toFixed(2)}</td></tr>`;}).join('')+'</table>';}
 if(P){
   const A=P.assets, grp=(t,hi)=>A.filter(a=>a.t===t&&(hi?a.p>=18.5:a.p<18.5));
   $('tlP').innerHTML=`<div class="tl-note">Price changes after <b>R${P.r} ${P.name}</b>${P.live?' (weekend in progress)':''}. Each percentage is the chance of that price move; underneath is the points it takes. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.

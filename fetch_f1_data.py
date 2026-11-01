@@ -389,6 +389,9 @@ def init_db(conn):
         conn.execute("ALTER TABLE players ADD COLUMN tla TEXT")
     if "active" not in plcols:
         conn.execute("ALTER TABLE players ADD COLUMN active INTEGER")
+    # F1 Fantasy's team id (a constructor's own id), for team colours in Tools.
+    if "team_id" not in plcols:
+        conn.execute("ALTER TABLE players ADD COLUMN team_id TEXT")
     conn.commit()
 
 
@@ -484,10 +487,11 @@ def fetch_and_store_drivers(conn, round_no, cookie):
             # Rounds are fetched oldest first, so tla/active end up as the
             # latest round's: whether the asset is in the game right now.
             conn.execute(
-                "INSERT INTO players (id, name, type, tla, active) VALUES (?,?,?,?,?) "
+                "INSERT INTO players (id, name, type, tla, active, team_id) VALUES (?,?,?,?,?,?) "
                 "ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type, "
-                "tla=excluded.tla, active=excluded.active",
-                (pid, name, ptype, p.get("DriverTLA") or None, int(str(p.get("IsActive")) == "1")),
+                "tla=excluded.tla, active=excluded.active, team_id=excluded.team_id",
+                (pid, name, ptype, p.get("DriverTLA") or None, int(str(p.get("IsActive")) == "1"),
+                 str(p.get("TeamId")) if p.get("TeamId") is not None else None),
             )
 
             value, old_value = to_float(p.get("Value")), to_float(p.get("OldPlayerValue"))
