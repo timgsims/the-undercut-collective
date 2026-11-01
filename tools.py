@@ -19,6 +19,7 @@ the round doesn't move. That reproduces 605 of the 608 changes so far; the
 other 3 are odd ones (Lawson twice, Gasly once)."""
 import json
 import math
+import sqlite3
 
 PRICE_MIN, PRICE_MAX = 3.0, 34.0
 TIER_A_FROM = 18.5
@@ -157,6 +158,17 @@ def read_tools_data(conn, season, race_name_by_round):
         hindsight.append({"r": r, "name": race_name_by_round.get(r, f"Round {r}"),
                           "final": final.get(r, False), "assets": assets, "teams": teams})
 
+    # ── The race simulation's predictions (sim.py), where it has run ───────
+    sims, sim_after = {}, {}
+    try:
+        for r, pid, xp, xn, hist in conn.execute(
+                "SELECT round, player_id, xpts, xnn, hist FROM sim_predictions WHERE season=?", (season,)):
+            h = {int(k): v for k, v in json.loads(hist).items()}
+            sims[(r, pid)] = (xp, xn, h, sum(h.values()))
+        sim_after = dict(conn.execute("SELECT round, after FROM sim_runs WHERE season=?", (season,)))
+    except sqlite3.OperationalError:
+        pass   # the simulation hasn't run on this database yet
+
     # ── Budget Builder (price predictor): the newest round F1 has published prices for ───────
     priced = [r for (r,) in conn.execute(
         "SELECT DISTINCT round FROM player_results WHERE season=? AND value IS NOT NULL "
@@ -184,6 +196,11 @@ def read_tools_data(conn, season, race_name_by_round):
             sd = (sum((h - mean) ** 2 for h in hist) / (len(hist) - 1)) ** 0.5 if len(hist) > 2 else 15.0
             sd = max(sd, 6.0)
             cdf = [_norm_cdf(x - 0.5, mean, sd) for x in needs]
+            sim_t = sims.get((T, pid))
+            if sim_t:   # the simulation's points distribution: P(points < need)
+                _, _, h, n_s = sim_t
+                cdf = [sum(v for k, v in h.items() if k < x) / n_s for x in needs]
+                mean = sim_t[0]
             probs = [cdf[0], cdf[1] - cdf[0], cdf[2] - cdf[1], 1 - cdf[2]]
             # Expected points for the Team Calculator (plan step A, until the
             # simulation).
@@ -202,7 +219,8 @@ def read_tools_data(conn, season, race_name_by_round):
             })
         rows.sort(key=lambda a: -a["p"])
         predictor = {"r": T, "name": race_name_by_round.get(T, f"Round {T}"), "live": live,
-                     "prevRounds": [r for r in (T - 2, T - 1) if r >= 1], "assets": rows}
+                     "prevRounds": [r for r in (T - 2, T - 1) if r >= 1], "assets": rows,
+                     "src": sim_after.get(T) if any((T, a["id"]) in sims for a in rows) else None}
 
     # ── Team Calculator: each manager's team going into the next deadline ───
     # Before a round locks that's round T itself, starting from their T-1 team;
@@ -239,8 +257,16 @@ def read_tools_data(conn, season, race_name_by_round):
                          "budget": round((bal or 0.0) + sum(price_now.get(p, 0.0) for p in picks), 1),
                          "free": free, "cost": cost or 10.0, "used": sorted(used.get(mid, []))})
         mgrs.sort(key=lambda m: m["m"])
+        # Expected points for the target round: the simulation's where it has
+        # run, otherwise the 12-race average already on each asset.
+        src = None
+        for a in predictor["assets"]:
+            s = sims.get((target, a["id"]))
+            if s:
+                a["xp"], a["xn"] = round(s[0], 1), round(s[1], 1)
+                src = sim_after.get(target)
         calc = {"r": target, "name": race_name_by_round.get(target, f"Round {target}"),
-                "pricesFrom": T, "managers": mgrs}
+                "pricesFrom": T, "managers": mgrs, "src": src}
 
     colours = {k: [c, _ink(c)] for k, c in TEAM_COLOURS.items()}
     return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours}
@@ -365,6 +391,7 @@ const sgn=v=>v==null?'—':(v>0?'+':'')+(+v).toFixed(1);
 const TC=T.colours||{};
 // Same-width pills: the code and the number each get a fixed-width box.
 const K=a=>`<span class="tl-k">${a.c}</span>`, V=v=>`<span class="tl-v">${v}</span>`;
+const SIMWHEN={pre:'before practice',fp1:'after FP1',fp2:'after FP2',fp3:'after FP3',quali:'after qualifying'};
 const head=(r,name,sub)=>`<div class="tl-head"><span class="rn">R${r}</span><div class="nm">${name}<small>${sub}</small></div></div>`;
 const tc=a=>{const c=TC[a.k];return c?`background:${c[0]};color:${c[1]}`:'';};
 
@@ -464,7 +491,7 @@ function runC(){
 }
 if(C){
   $('tcHead').innerHTML=head(C.r,C.name,'Best teams for this race');
-  $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. xPts are each asset's average over its last 12 races${C.pricesFrom<C.r?`, at today's prices (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}. They don't know the track or this weekend's practice yet; a proper race simulation is planned.`;
+  $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. ${C.src?`xPts come from our race simulation: the weekend run 10,000 times from each car's qualifying and practice pace, how hard the track is to pass on, reliability and overtaking, scored with the F1 Fantasy rules (last run ${SIMWHEN[C.src]||C.src})`:`xPts are each asset's average over its last 12 races, until the race simulation has run for this round`}${C.pricesFrom<C.r?`. Prices are today's (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}.`;
   cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
   if(C.managers.some(m=>m.m==='Tim'))cM.value='Tim';
 }
@@ -540,7 +567,7 @@ function ppTable(rows,tier,label){
 if(P){
   const A=P.assets, grp=(t,hi)=>A.filter(a=>a.t===t&&(hi?a.p>=18.5:a.p<18.5));
   $('tlP').innerHTML=head(P.r,P.name,`Price changes after this race${P.live?' · weekend under way':''}`)+`<div class="tl-note">Each percentage is the chance of that price move; underneath is the points it takes. Sorted by expected price change (xΔ$), best first; 0.0 is for an asset at the $3M floor or $34M cap. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.
-  <br>The odds come from each asset's last 8 races, so they lag behind form changes. Odds from a proper race simulation are planned.</div>`+
+  <br>${P.src?`The odds come from our race simulation: each asset's points over 10,000 simulated runs of the weekend (last run ${SIMWHEN[P.src]||P.src}).`:`The odds come from each asset's last 8 races until the race simulation has run for this round.`}</div>`+
   ppTable(grp('D',true),'Driver','Drivers $18.5M+')+ppTable(grp('D',false),'Driver','Drivers under $18.5M')+
   ppTable(grp('C',true),'Team','Constructors $18.5M+')+ppTable(grp('C',false),'Team','Constructors under $18.5M');
 } else $('tlP').innerHTML='<div class="tl-note">No prices published yet.</div>';

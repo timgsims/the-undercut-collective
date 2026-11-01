@@ -15,9 +15,24 @@ where the data comes from, not the look and feel. Written 2026-10-31.
   ones and weighting recent rounds made it worse; mean error 13.4 pts). "Price predictor"
   renamed **Budget builder** (Tim), sorted by xΔ$ with a 0.0 column at the floor/cap like
   F1FT; team colours on every pill.
-- **Next:** the simulation, built on the 2026 data rather than left for 2027; it replaces
-  the calculator's xPts and the budget builder's odds. Tim uses every part of F1FT, so
-  Live Scoring, Statistics and the analyzers follow after that.
+- **Built 2026-11-01: the race simulation** (`sim_data.py`, `sim.py`, `sim_backtest.py`,
+  `sim_overrides.json`). It now feeds the calculator's xPts and the budget builder's odds;
+  the 12-race average is only the fallback. How it works is in `sim.py`'s docstring.
+  - Scoring engine: rebuilds 391 of 396 real 2026 driver weekends exactly from Jolpica
+    results (the 5 are no-time qualifyings missing from Jolpica).
+  - Backtest, rounds 5-18, mean error per asset per round (12-race average: 13.33):
+    before the weekend 12.86, after FP3 12.72, after qualifying 12.83. Slightly
+    optimistic (+1.1 drivers, +2.1 constructors), well calibrated by level, and the
+    10-90% range holds the real score 82-83% of the time. 2026 points are very noisy
+    (retirements are -20): even knowing the real grid, a grid-slot average only gets
+    drivers to 10.7, so there isn't much more to win on averages.
+  - Mexico after FP3 vs F1FT: correlation 0.985, mean difference 2.9 pts; F1FT rates the
+    top teams higher (MCL 56 vs 44, NOR 25 vs 16).
+  - Hand inputs (grid penalties, pace tweaks) go in `sim_overrides.json`.
+  - Runs from `run_pipeline.sh` every full run, for the Budget builder's round and the
+    next one once that weekend is under way.
+- **Next:** score each weekend's predictions (ours and F1FT's) against real points;
+  long-run race pace from practice; then Live Scoring, Statistics and the analyzers.
 - **Elite Data is feasible:** `feeds/leaderboard/public/global/list_1_0_1.json` is public
   and lists the global top 500 with each player's current team (pick % in one call).
   DRS % and chips need the opponent team call per player, ~500 calls once per round

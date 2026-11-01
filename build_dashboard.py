@@ -571,8 +571,10 @@ def spoiler_free_db(db_path, season, hidden_round):
             "  AND prev.player_id=player_results.player_id"
             ") WHERE season=? AND round=?", (season, r))
         dst.execute("DELETE FROM nz_leaderboard WHERE season=?", (season,))
-        # The Tools tab's per-asset stats (fetch_f1_data.py), on older DBs absent.
-        for table in ("player_gameday_stats", "player_event_points"):
+        # The Tools tab's per-asset stats (fetch_f1_data.py) and the race
+        # simulation's inputs and output (sim_data.py, sim.py); on older DBs absent.
+        for table in ("player_gameday_stats", "player_event_points", "sim_predictions", "sim_runs",
+                      "hist_results", "hist_quali", "practice_laps"):
             try:
                 dst.execute(f"DELETE FROM {table} WHERE season=? AND round>=?", (season, r))
             except sqlite3.OperationalError:

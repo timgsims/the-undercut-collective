@@ -61,6 +61,13 @@ fi
 # failing) won't last. Never allowed to fail the run.
 python3 cookie_watch.py || echo "cookie_watch.py failed (non-fatal)"
 
+# Race simulation for the Tools tab: sim_data.py fetches results and this
+# weekend's practice laps (Jolpica, OpenF1), sim.py runs the weekend 10,000
+# times and saves each asset's points distribution. Never allowed to fail the
+# run; the Tools tab falls back to recent form without it.
+python3 sim_data.py || echo "sim_data.py failed (non-fatal)"
+python3 sim.py || echo "sim.py failed (non-fatal)"
+
 if python3 gate_check.py; then
     python3 build_dashboard.py
     build_status=$?

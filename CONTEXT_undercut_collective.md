@@ -224,8 +224,12 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
    searched in the browser) and Budget builder (was "Price predictor": points needed
    and odds for each price move, sorted by xΔ$ like F1FT). Pills use team colours
    (`tools.TEAM_COLOURS`, keyed by F1 Fantasy team id in `players.team_id`). Code in
-   `tools.py`; F1’s price rule is in its docstring. The plan for the rest
-   (simulation, Elite Data) is `TOOLS_PLAN.md`.
+   `tools.py`; F1’s price rule is in its docstring. Expected points and price odds
+   come from the race simulation (2026-11-01): `sim_data.py` fetches Jolpica results
+   2022 on and OpenF1 practice laps into `hist_*`/`practice_laps`, `sim.py` runs each
+   weekend 10,000 times into `sim_predictions`/`sim_runs` (both run from
+   `run_pipeline.sh`, non-fatal), `sim_backtest.py` checks it, `sim_overrides.json`
+   takes grid penalties by hand. The plan for the rest is `TOOLS_PLAN.md`.
 9. 🏎 Driver Results — **currently in local preview only, not yet approved
    for the live site** (see Pending below). Ranked by fantasy points per
    race (not DRS-doubled — this is *not* the same as F1's real official
