@@ -300,6 +300,10 @@ TOOLS_HTML = r"""
 .tl-pp td small{display:block;font-size:9px;color:#666;font-weight:400}
 .tl-pp .lk{font-weight:600}
 .tl-up{color:#88dd44}.tl-dn{color:#ff7a7a}
+.tl-head{display:flex;align-items:center;gap:10px;margin:2px 0 6px}
+.tl-head .rn{font-size:12px;font-weight:700;padding:4px 8px;border-radius:6px;background:#e10600;color:#fff;letter-spacing:.03em}
+.tl-head .nm{font-size:20px;font-weight:700;color:#f2f2f0;line-height:1.1}
+.tl-head small{display:block;font-size:11px;font-weight:400;color:#888;margin-top:2px}
 .tl-io{flex-basis:100%;font-size:10px;color:#888;margin-top:2px}
 .tl-sub button{padding:8px 4px}
 </style>
@@ -309,6 +313,7 @@ TOOLS_HTML = r"""
   <button id="tlBtnP" onclick="tlShow('p')">Budget builder</button>
 </div>
 <div id="tlC">
+  <div id="tcHead"></div>
   <div class="tl-note" id="tlCNote"></div>
   <div class="tl-ctl">
     <div><label>Manager</label><select id="tcMgr"></select></div>
@@ -360,6 +365,7 @@ const sgn=v=>v==null?'—':(v>0?'+':'')+(+v).toFixed(1);
 const TC=T.colours||{};
 // Same-width pills: the code and the number each get a fixed-width box.
 const K=a=>`<span class="tl-k">${a.c}</span>`, V=v=>`<span class="tl-v">${v}</span>`;
+const head=(r,name,sub)=>`<div class="tl-head"><span class="rn">R${r}</span><div class="nm">${name}<small>${sub}</small></div></div>`;
 const tc=a=>{const c=TC[a.k];return c?`background:${c[0]};color:${c[1]}`:'';};
 
 // ── Team search: every 5-driver + 2-constructor team under budget. DRS (2x)
@@ -457,7 +463,8 @@ function runC(){
   } else $('tcCur').innerHTML='';
 }
 if(C){
-  $('tlCNote').innerHTML=`Best teams for <b>R${C.r} ${C.name}</b>, ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. xPts are each asset's average over its last 12 races${C.pricesFrom<C.r?`, at today's prices (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}. They don't know the track or this weekend's practice yet; a proper race simulation is planned.`;
+  $('tcHead').innerHTML=head(C.r,C.name,'Best teams for this race');
+  $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. xPts are each asset's average over its last 12 races${C.pricesFrom<C.r?`, at today's prices (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}. They don't know the track or this weekend's practice yet; a proper race simulation is planned.`;
   cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
   if(C.managers.some(m=>m.m==='Tim'))cM.value='Tim';
 }
@@ -532,7 +539,7 @@ function ppTable(rows,tier,label){
     return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span></td><td>${fmt(a.p)}</td>${a.prev.map(([r,x])=>`<td>${x==null?'—':Math.round(x)}</td>`).join('')}${cells}<td class="${a.xd>0.04?'tl-up':a.xd<-0.04?'tl-dn':''}">${a.xd>0?'+':''}${a.xd.toFixed(2)}</td></tr>`;}).join('')+'</table>';}
 if(P){
   const A=P.assets, grp=(t,hi)=>A.filter(a=>a.t===t&&(hi?a.p>=18.5:a.p<18.5));
-  $('tlP').innerHTML=`<div class="tl-note">Price changes after <b>R${P.r} ${P.name}</b>${P.live?' (weekend in progress)':''}. Each percentage is the chance of that price move; underneath is the points it takes. Sorted by expected price change (xΔ$), best first; 0.0 is for an asset at the $3M floor or $34M cap. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.
+  $('tlP').innerHTML=head(P.r,P.name,`Price changes after this race${P.live?' · weekend under way':''}`)+`<div class="tl-note">Each percentage is the chance of that price move; underneath is the points it takes. Sorted by expected price change (xΔ$), best first; 0.0 is for an asset at the $3M floor or $34M cap. F1 moves a price by its average points per $M over the last 3 races it took part in (this one included): under 0.6, 0.6 to 0.9, 0.9 to 1.2, or 1.2 and up. Prices stay between $3M and $34M.
   <br>The odds come from each asset's last 8 races, so they lag behind form changes. Odds from a proper race simulation are planned.</div>`+
   ppTable(grp('D',true),'Driver','Drivers $18.5M+')+ppTable(grp('D',false),'Driver','Drivers under $18.5M')+
   ppTable(grp('C',true),'Team','Constructors $18.5M+')+ppTable(grp('C',false),'Team','Constructors under $18.5M');
