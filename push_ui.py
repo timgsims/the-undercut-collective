@@ -9,7 +9,8 @@ import json
 PUSH_API = "https://f1push.simsey.co.nz"
 
 # (type, label, what it is) in the order shown. Keep the types in step with
-# push-service/src/server.js TYPES and notify.py.
+# push-service/src/server.js TYPES and notify.py. The two that give away
+# results (SPOILERS) start switched off (Tim, 1 Nov 2026); the rest start on.
 KINDS = [
     ("lock", "Team lock reminder", "2 hours before teams lock, or 7:30pm the night before if it's in the night"),
     ("fp1", "After practice", "When FP1 is done and the Tools tab has this weekend's pace"),
@@ -20,6 +21,8 @@ KINDS = [
     ("chips", "Chips left", "With 4, 2 and 1 races to go, the chips you haven't used"),
 ]
 
+SPOILERS = {"quali", "final"}
+
 BELL_BUTTON = ('<button class="nb-bell" onclick="ucNotifyOpen()" aria-label="Notifications" '
                'title="Notifications">🔔</button>')
 
@@ -28,7 +31,8 @@ def panel_html(managers):
     return (NOTIFY_HTML
             .replace("__PUSH_API__", PUSH_API)
             .replace("__MANAGERS__", json.dumps([m["name"] for m in managers]))
-            .replace("__KINDS__", json.dumps([{"t": t, "l": l, "d": d} for t, l, d in KINDS])))
+            .replace("__KINDS__", json.dumps([{"t": t, "l": l, "d": d, "on": t not in SPOILERS}
+                                              for t, l, d in KINDS])))
 
 
 NOTIFY_HTML = r"""
@@ -77,7 +81,9 @@ async function call(path,body){
   if(!r.ok)throw new Error(j.error||('error '+r.status));
   return j;}
 const keyBytes=b=>Uint8Array.from(atob(b.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-b.length%4)%4)),c=>c.charCodeAt(0));
-function prefsOut(){const p={};KINDS.forEach(k=>p[k.t]=st.prefs[k.t]!==false);return p;}
+// A kind not chosen yet takes its default (the spoiler ones start off).
+const isOn=k=>k.t in st.prefs?st.prefs[k.t]!==false:k.on;
+function prefsOut(){const p={};KINDS.forEach(k=>p[k.t]=isOn(k));return p;}
 
 async function refresh(){
   st.why=null;
@@ -139,13 +145,13 @@ function render(){
       <div class="nb-lbl">Who are you?</div>
       <select class="nb-sel" id="nbMgr"><option value="">Not saying (general messages only)</option>${MANAGERS.map(m=>`<option ${m===st.manager?'selected':''}>${m}</option>`).join('')}</select>
       <div class="nb-lbl" style="margin-top:16px">Send me</div>
-      ${KINDS.map(k=>`<div class="nb-row"><div class="nb-t">${k.l}<small>${k.d}</small></div><button class="nb-sw ${st.prefs[k.t]!==false?'on':''}" data-k="${k.t}" aria-pressed="${st.prefs[k.t]!==false}"></button></div>`).join('')}
+      ${KINDS.map(k=>`<div class="nb-row"><div class="nb-t">${k.l}<small>${k.d}</small></div><button class="nb-sw ${isOn(k)?'on':''}" data-k="${k.t}" aria-pressed="${isOn(k)}"></button></div>`).join('')}
       <button class="nb-btn" id="nbTest">Send a test</button>
     </div>
     <div class="nb-msg">${st.msg||''}</div>`;
   $('nbMain').onclick=toggle;
   $('nbMgr').onchange=e=>{st.manager=e.target.value;save();};
-  b.querySelectorAll('[data-k]').forEach(x=>x.onclick=()=>{const k=x.dataset.k;st.prefs[k]=st.prefs[k]===false;save();});
+  b.querySelectorAll('[data-k]').forEach(x=>x.onclick=()=>{const k=KINDS.find(y=>y.t===x.dataset.k);st.prefs[k.t]=!isOn(k);save();});
   $('nbTest').onclick=test;}
 
 window.ucNotifyOpen=()=>{st.msg='';$('nbWrap').classList.add('on');render();refresh();};

@@ -29,6 +29,8 @@ import { join } from 'node:path';
 import { makeVapidKeys, sendPush } from './webpush.js';
 
 export const TYPES = ['lock', 'fp1', 'quali', 'final', 'prices', 'inactive', 'chips'];
+// These give away results, so a device gets them only once it switches them on (Tim, 1 Nov 2026).
+const OFF_UNLESS_CHOSEN = new Set(['quali', 'final']);
 
 export function openDb(dir) {
   mkdirSync(dir, { recursive: true });
@@ -58,7 +60,7 @@ const now = () => new Date().toISOString();
 
 function cleanPrefs(p) {
   const out = {};
-  for (const t of TYPES) out[t] = !(p && p[t] === false);   // on unless switched off
+  for (const t of TYPES) out[t] = p && typeof p[t] === 'boolean' ? p[t] : !OFF_UNLESS_CHOSEN.has(t);
   return out;
 }
 

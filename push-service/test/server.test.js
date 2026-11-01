@@ -72,6 +72,7 @@ test('subscribe, choose a manager, receive only matching messages', async () => 
     assert.equal(st.manager, 'Tim');
     assert.equal(st.prefs.prices, false);
     assert.equal(st.prefs.lock, true);
+    assert.equal(st.prefs.final, false);   // spoilers start off
 
     // no token, or through the tunnel: refused
     assert.equal((await call('/internal/send', { messages: [] })).status, 403);
@@ -82,6 +83,7 @@ test('subscribe, choose a manager, receive only matching messages', async () => 
       { type: 'lock', manager: null, title: 'Team locks soon', body: 'Brazil' },
       { type: 'prices', manager: 'Tim', title: 'Prices are out', body: '+0.4' },   // Tim turned prices off
       { type: 'final', manager: 'Dan', title: 'Dan: Mexico is final' },              // nobody picked Dan
+      { type: 'final', manager: null, title: 'Mexico is final' },                    // spoiler, not chosen
     ] }, { Authorization: 'Bearer secret' })).json();
     assert.equal(r.sent, 2);
     assert.equal(inbox.length, 2);
@@ -117,7 +119,7 @@ test('a phone that removed the app is forgotten', async () => {
     await fetch(base + '/api/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subscription: { endpoint: 'https://push.example/x', keys: p.keys }, manager: null }) });
     await fetch(base + '/internal/send', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t' },
-      body: JSON.stringify({ messages: [{ type: 'final', manager: null, title: 'x' }] }) });
+      body: JSON.stringify({ messages: [{ type: 'lock', manager: null, title: 'x' }] }) });
     assert.equal(db.prepare('SELECT COUNT(*) n FROM subs').get().n, 0);
   } finally { app.close(); }
 });
