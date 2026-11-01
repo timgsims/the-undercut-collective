@@ -1,0 +1,26 @@
+# /opt/docker/undercut-push on mako-sentinel. The dashboard (GitHub Pages)
+# reaches it at https://f1push.simsey.co.nz through the Cloudflare tunnel
+# (container trip-hub-cloudflared, on "proxy"); no Access, as league members
+# aren't on it. The pipeline's notify.py posts to the loopback port.
+services:
+  undercut-push:
+    build: .
+    container_name: undercut-push
+    restart: unless-stopped
+    env_file: .env            # INTERNAL_TOKEN (0600, also in ~/f1-fantasy/secrets/push_token)
+    environment:
+      - ALLOWED_ORIGIN=https://f1fantasy.simsey.co.nz
+      - APP_URL=https://f1fantasy.simsey.co.nz
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:3092:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

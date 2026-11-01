@@ -24,6 +24,12 @@ git reset --hard origin/main
 # during a race weekend (a ~10-request fetch that saves stage snapshots for
 # no-spoiler mode, no build), or "skip" (between race weekends).
 mode=$(python3 pipeline_mode.py)
+
+# Push notifications (notify.py -> the undercut-push container). Runs every
+# 15 minutes in every mode, as some (the team-lock reminder, new prices) fall
+# outside race weekends. It only sends what's due and hasn't gone yet. Never
+# allowed to fail the run.
+python3 notify.py || echo "notify.py failed (non-fatal)"
 if [ "$mode" = "skip" ]; then
     exit 0
 fi

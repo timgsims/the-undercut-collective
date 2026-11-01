@@ -38,3 +38,23 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(event.request))
   );
 });
+
+// Push notifications (notify.py -> push-service on Sentinel). Every push must
+// show a notification, or iOS cancels the subscription.
+self.addEventListener('push', (event) => {
+  let m = {};
+  try { m = event.data ? event.data.json() : {}; } catch (e) { m = { body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(m.title || 'The Undercut Collective', {
+    body: m.body || '', tag: m.tag || undefined, icon: 'icons/icon-192.png', data: { url: m.url || '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const w = list.find((c) => 'focus' in c);
+    if (w) return (w.navigate ? w.navigate(url).catch(() => w) : Promise.resolve(w)).then((c) => (c || w).focus());
+    return self.clients.openWindow(url);
+  }));
+});

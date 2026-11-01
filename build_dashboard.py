@@ -18,6 +18,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import push_ui
 import tools
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3461,6 +3462,7 @@ def build_html(data, spoiler=None):
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
       <span class="header-badge">{SEASON} Season · {nd}/{nt} races · Updated {updated_str}</span>
+      {push_ui.BELL_BUTTON}
     </div>
     <nav class="tab-nav">
 {tab_buttons}    </nav>
@@ -3469,6 +3471,7 @@ def build_html(data, spoiler=None):
 </div>
 <div id="tab-content">
 {panel_divs}</div>
+{push_ui.panel_html(data["managers"])}
 <script>
 function showTab(slug, fromRestore) {{
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -3483,6 +3486,13 @@ try {{
   const t = sessionStorage.getItem('uc-tab');
   if (t && document.getElementById('panel-' + t)) showTab(t, true);
 }} catch(e) {{}}
+// A link to a tab, e.g. #tools from a notification
+function tabFromHash() {{
+  const h = location.hash.slice(1);
+  if (h && document.getElementById('panel-' + h)) showTab(h, true);
+}}
+tabFromHash();
+window.addEventListener('hashchange', tabFromHash);
 if ('serviceWorker' in navigator) {{
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
 }}
