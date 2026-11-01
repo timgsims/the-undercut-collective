@@ -1,0 +1,5 @@
+# Unix line endings everywhere: run_pipeline.sh with CRLF broke the pipeline
+# (1 Nov 2026, files edited on Windows).
+* text=auto eol=lf
+*.png binary
+*.ico binary
