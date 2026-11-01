@@ -225,7 +225,7 @@ Chart.register({id:'xchartPin',afterRender:xchartPin});
     <div class="header-top">
       <span style="font-size:16px">🏎</span>
       <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">2026 Season · 18/23 races · Updated 1 Nov 2026, 9:37 pm NZT</span>
+      <span class="header-badge">2026 Season · 18/23 races · Updated 1 Nov 2026, 9:46 pm NZT</span>
     </div>
     <nav class="tab-nav">
       <button class="tab-btn active" id="tab-leaderboard" onclick="showTab('leaderboard')">🏁 Leaderboard</button>
@@ -1525,9 +1525,9 @@ renderImpactPerRace(impactManagerSel.value, impactPerRaceMetric);
 .tl-sub button{padding:8px 4px}
 </style>
 <div class="tl-sub">
-  <button id="tlBtnC" class="on" onclick="tlShow('c')">Team calculator</button>
+  <button id="tlBtnC" class="on" onclick="tlShow('c')">Team Calculator</button>
   <button id="tlBtnH" onclick="tlShow('h')">Hindsight</button>
-  <button id="tlBtnP" onclick="tlShow('p')">Budget builder</button>
+  <button id="tlBtnP" onclick="tlShow('p')">Budget Builder</button>
 </div>
 <div id="tlC">
   <div id="tcHead"></div>
@@ -1584,6 +1584,8 @@ const TC=T.colours||{};
 const K=a=>`<span class="tl-k">${a.c}</span>`, V=v=>`<span class="tl-v">${v}</span>`;
 const SIMWHEN={pre:'before practice',fp1:'after FP1',fp2:'after FP2',fp3:'after FP3',quali:'after qualifying'};
 const head=(r,name,sub)=>`<div class="tl-head"><span class="rn">R${r}</span><div class="nm">${name}<small>${sub}</small></div></div>`;
+// Constructors first, then drivers; each highest points first.
+const byPts=(a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.x-a.x||b.p-a.p);
 const tc=a=>{const c=TC[a.k];return c?`background:${c[0]};color:${c[1]}`:'';};
 
 // ── Team search: every 5-driver + 2-constructor team under budget. DRS (2x)
@@ -1655,7 +1657,7 @@ function cSetMgr(){const m=cMgr();
     o.disabled=u; o.text=CHIP[o.value]+(o.value==='X3'?' (3x)':'')+(u?' (used)':'');});
   if(cC.selectedOptions[0]&&cC.selectedOptions[0].disabled)cC.value='';}
 function cAssets(){
-  const sorted=CA.slice().sort((a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.p-a.p));
+  const sorted=CA.slice().sort(byPts);
   $('tcAssets').innerHTML=sorted.map((a,i)=>(i&&a.t!==sorted[i-1].t?'<div class="gap"></div>':'')+
     `<button data-id="${a.id}" class="${cst.inc.has(a.id)?'inc':cst.exc.has(a.id)?'exc':''}" style="${tc(a)}">${K(a)}<span class="tl-v" style="font-weight:400;opacity:.75">${Math.round(a.x)}</span></button>`).join('');
   $('tcAssets').querySelectorAll('button').forEach(b=>b.onclick=()=>{const id=b.dataset.id;
@@ -1676,7 +1678,7 @@ function runC(){
     if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});now=keep[0]?keep[0].pts:null;}
     const b=D.length?boosts(D,o.chip):{};
     $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team now: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
-      `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${V(Math.round(a.x))}</span>`).join('')}</div>`+
+      `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).sort(byPts).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${V(Math.round(a.x))}</span>`).join('')}</div>`+
       (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
@@ -1703,7 +1705,7 @@ function fillMgr(){const h=round();const keep=mSel.value;mSel.innerHTML='';
 function mgr(){const h=round();return h&&h.teams.find(t=>t.m===mSel.value);}
 function setBudget(){const m=mgr();bIn.value=(m&&m.budget?m.budget:100).toFixed(1);}
 function assetsBar(){const h=round();if(!h){$('tlAssets').innerHTML='';return;}
-  const sorted=h.assets.slice().sort((a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.p-a.p));
+  const sorted=h.assets.slice().sort(byPts);
   $('tlAssets').innerHTML=sorted.map((a,i)=>(i&&a.t!==sorted[i-1].t?'<div class="gap"></div>':'')+
     `<button data-id="${a.id}" class="${st.inc.has(a.id)?'inc':st.exc.has(a.id)?'exc':''}" style="${tc(a)}">${K(a)}<span class="tl-v" style="font-weight:400;opacity:.75">${a.x}</span></button>`).join('');
   $('tlAssets').querySelectorAll('button').forEach(b=>b.onclick=()=>{const id=b.dataset.id;
@@ -1721,7 +1723,7 @@ function runH(){
     const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
     const mine=m.picks.map(id=>byId[id]).filter(Boolean);
     const cost=mine.reduce((a,b)=>a+b.p,0);
-    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.map(a=>`<span class="tl-code ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}" style="${tc(a)}">${K(a)}${V(a.x)}</span>`).join('')}</div>`;
+    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.slice().sort(byPts).map(a=>`<span class="tl-code ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}" style="${tc(a)}">${K(a)}${V(a.x)}</span>`).join('')}</div>`;
   } else $('tlCmp').innerHTML='';
 }
 rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;fillMgr();setBudget();assetsBar();runH();};
