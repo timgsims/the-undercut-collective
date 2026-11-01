@@ -603,10 +603,11 @@ function eliteView(){
     return `<tr><td class="lk"><span class="tl-code" style="${tc(a)}">${K(a)}</span>${tag}</td><td>${pct(a.pk)}</td><td>${pct(a.drs)}</td><td>${a.lg==null?'—':a.lg+'%'}</td>
       <td class="${d==null?'':d>=15?'tl-up':d<=-15?'tl-dn':''}">${d==null?'—':(d>0?'+':'')+Math.round(d)}</td></tr>`;}).join('');
   const head=n=>`<tr><th>${n}</th><th>Top 500</th><th>DRS</th><th>League</th><th>Diff</th></tr>`;
-  const chips=Object.entries(e.chips).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${n}`).join(' · ');
+  // As F1FT shows them: the share of teams that played each chip this round.
+  const chips=e.nd?Object.entries(e.chips).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`${c} ${pct(100*n/e.nd)}`).join(' · '):'';
   el.innerHTML=`<div class="tl-note">What the global top 500 locked in for each round, against our league. Pick % from all ${e.n} teams; DRS % (2x or 3x) and chips from the ${e.nd} whose full team we've read so far. "Diff" is top 500 minus league, in points: a big plus is something the best players back that nobody here does.</div>
     <div class="tl-ctl" style="grid-template-columns:1fr"><div><label>Round</label><select id="tlERound">${E.slice().reverse().map(x=>`<option value="${x.r}" ${x.r===e.r?'selected':''}>R${x.r} ${x.name}</option>`).join('')}</select></div></div>
-    ${chips?`<div class="tl-note" style="margin-top:0"><b>Chips this round (top 500):</b> ${chips}</div>`:''}
+    ${e.nd?`<div class="tl-note" style="margin-top:0"><b>Chips played this round:</b> ${chips||'none'} <span style="color:#666">(share of the ${e.nd} teams read so far)</span></div>`:''}
     <div class="section-label">Drivers</div><table class="tl-pp">${head('Driver')}${rows('D')}</table>
     <div class="section-label">Constructors</div><table class="tl-pp">${head('Team')}${rows('C')}</table>`;
   $('tlERound').onchange=eliteView;}

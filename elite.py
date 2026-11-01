@@ -31,7 +31,9 @@ DB = Path(__file__).resolve().parent / "f1_data.db"
 LIST_URL = "https://fantasy.formula1.com/feeds/leaderboard/public/global/list_1_0_1.json"
 PER_RUN = 200
 PAUSE = 1.2
-CHIP_FIELDS = {"wildcardtakengd": "Wildcard", "limitlesstakengd": "Limitless", "extradrstakengd": "Extra DRS",
+# The round each chip was played in. Wildcard's is is_wildcard_taken_gd_id:
+# wildcardtakengd is always 0 (found 1 Nov 2026).
+CHIP_FIELDS = {"is_wildcard_taken_gd_id": "Wildcard", "limitlesstakengd": "Limitless", "extradrstakengd": "Extra DRS",
                "nonigativetakengd": "No Negative", "autopilottakengd": "Auto Pilot", "finalfixtakengd": "Final Fix"}
 
 SCHEMA = """
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS elite_teams (
     season INTEGER, round INTEGER, pos INTEGER, rank INTEGER, social_id TEXT, team_no INTEGER,
     guid TEXT, team_name TEXT, picks TEXT, season_points REAL,
     captain TEXT, mega_captain TEXT, chip TEXT, round_points REAL, detail_at TEXT, detail_err TEXT,
+    chip_rounds TEXT,
     PRIMARY KEY (season, round, pos));
 """
 
@@ -111,9 +114,11 @@ def fill_details(conn, season, limit=PER_RUN):
         else:
             t = (payload["Data"]["Value"].get("userTeam") or [{}])[0]
             chip = next((name for k, name in CHIP_FIELDS.items() if str(t.get(k)) == str(rnd)), None)
+            # Every chip's round as F1 gave it, so a mapping fix never needs the calls again.
+            raw = json.dumps({k: t.get(k) for k in t if "taken" in k.lower()})
             conn.execute("UPDATE elite_teams SET captain=?, mega_captain=?, chip=?, round_points=?, detail_at=?, "
-                         "detail_err=NULL WHERE season=? AND round=? AND pos=?",
-                         (t.get("capplayerid"), t.get("mgcapplayerid"), chip, t.get("gdpoints"), now,
+                         "detail_err=NULL, chip_rounds=? WHERE season=? AND round=? AND pos=?",
+                         (t.get("capplayerid"), t.get("mgcapplayerid"), chip, t.get("gdpoints"), now, raw,
                           season, rnd, pos))
             done += 1
         if (done + fails) % 20 == 0:
@@ -128,6 +133,8 @@ def main():
     import datetime as dt
     conn = sqlite3.connect(DB, timeout=60)
     conn.executescript(SCHEMA)
+    if "chip_rounds" not in {r[1] for r in conn.execute("PRAGMA table_info(elite_teams)")}:
+        conn.execute("ALTER TABLE elite_teams ADD COLUMN chip_rounds TEXT")
     season = conn.execute("SELECT MAX(season) FROM races").fetchone()[0]
     if "--status" in sys.argv:
         for r in conn.execute("SELECT round, COUNT(*), SUM(detail_at IS NOT NULL), SUM(detail_err IS NOT NULL) "
