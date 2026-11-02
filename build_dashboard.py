@@ -96,8 +96,12 @@ RACE_MAX_HOURS = 3
 # A weekend total worked out from driver points because F1 hadn't stored the
 # team's own total yet (provisional.py). Marked, and explained under the table.
 PROV_MARK = "*"
+# Every session scored but F1 hasn't marked the round final: F1 Fantasy's own
+# wording for this is "Provisional points" (Tim, 2026-11-02).
+PROVISIONAL_LINE = ('<div style="font-size:11px;color:#ffaa44;margin:2px 0 6px">'
+                    'Provisional points: F1 hasn’t locked these in yet, so they can still change.</div>')
 PROV_NOTE_HTML = ('<div style="font-size:11px;color:#888;padding-top:8px">'
-                  '* Provisional: worked out from driver points, the way the F1 Fantasy app '
+                  '* Worked out from driver points, the way the F1 Fantasy app '
                   'shows it. F1’s own total replaces it once F1 posts it.</div>')
 
 # Line charts with one x-axis label per race (Points progression, Head-to-Head,
@@ -1200,8 +1204,11 @@ def panel_leaderboard(data):
     if latest_race:
         rname = latest_race["name"]
         d = _weekend_summary_data(data, [latest_race])[rname]
+        all_done = bool(d["sessions"]) and all(s["done"] for s in d["sessions"])
         header_text = (f"{race_label(latest_race)} completed weekend points summary" if d["isFinal"]
+                       else f"{race_label(latest_race)} · provisional points" if all_done
                        else f"{race_label(latest_race)} weekend in progress")
+        prov_line = PROVISIONAL_LINE if not d["isFinal"] and all_done else ""
 
         session_html = ""
         if d["sessions"]:
@@ -1250,6 +1257,7 @@ def panel_leaderboard(data):
     <span style="font-size:18px">🏁</span>
     <span style="font-weight:600;color:{title_color}">{header_text}</span>
   </div>
+  {prov_line}
   {session_html}
   {table_header}
   {table_rows}
@@ -1399,10 +1407,10 @@ def panel_race_breakdown(data):
         r_avg     = round(sum(all_pts) / len(all_pts)) if all_pts else 0
         negatives = sum(1 for s in all_pts if s < 0)
         neg_note  = f"{negatives} went negative" if negatives else "Everyone positive"
-        live_tag  = '' if is_final else '<span class="tag" style="background:#3a2a00;color:#ffaa44">Live — not final</span>'
+        live_tag  = '' if is_final else '<span class="tag" style="background:#3a2a00;color:#ffaa44">Provisional points</span>'
         if any(rname in mm.get("provisional", ()) for mm in data["managers_sorted"]):
             live_tag += ('<span class="tag" style="background:#3a2a00;color:#ffaa44">'
-                         f'{PROV_MARK} Provisional, from driver points</span>')
+                         f'{PROV_MARK} Worked out from driver points</span>')
 
         race_cards_html += f"""<div class="race-card">
   <div class="race-header"><span class="race-title">{race_label(race)}</span><span class="race-round">Round {rnd}</span></div>
@@ -1453,7 +1461,8 @@ function renderWeekendSummary(rname){{
   const d=weekendByRace[rname];
   const el=document.getElementById('weekend-summary-display');
   if(!d){{el.innerHTML='';return;}}
-  const headerText=d.isFinal?(rname+' completed weekend points summary'):(rname+' weekend in progress');
+  const allDone=d.sessions.length>0&&d.sessions.every(s=>s.done);
+  const headerText=d.isFinal?(rname+' completed weekend points summary'):allDone?(rname+' · provisional points'):(rname+' weekend in progress');
   const boxBorder=d.isFinal?'0.5px solid #2a2a2a':'1px solid #ffaa44';
   const titleColor=d.isFinal?'#eee':'#ffaa44';
   const pills=d.sessions.map(s=>`<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${{s.done?'#1a3010':'#2a2a2a'}};color:${{s.done?'#88dd44':'#888'}}">${{s.done?'✓':'…'}} ${{s.type}}</span>`).join('');
@@ -1473,6 +1482,7 @@ function renderWeekendSummary(rname){{
       <span style="font-size:18px">🏁</span>
       <span style="font-weight:600;color:${{titleColor}}">${{headerText}}</span>
     </div>
+    ${{!d.isFinal&&allDone?{js(PROVISIONAL_LINE)}:''}}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${{pills}}</div>
     ${{headHtml}}${{rowsHtml}}
   </div>`;
