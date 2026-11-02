@@ -52,7 +52,17 @@ P = {
     "dnf_prior": 6,        # starts of league-average reliability a team starts from
     "ot_prior": 4,         # races of field-average overtakes a driver starts from
     "ot_gain": 0.25,       # extra overtakes per place gained
+    # Track history (2026-11-02): both off. On 2026 R5-18 every setting made the
+    # pre-weekend error worse (12.81 -> 12.86-13.00) or no clearer than noise
+    # (similar tracks 1.0: 12.79, but worse after FP3). 2026 is a new rule set,
+    # so 2022-25 says little about these cars; retest in 2027 against 2026.
+    "aff_weight": 0.0,     # share of a team's past over/under-performance at this circuit added to car pace
+    "aff_age": 0.5,        # weight of each older season in that
+    "aff_prior": 1.0,      # seasons of "no track effect" it starts from
+    "sim_weight": 0.0,     # extra weight on recent rounds at circuits like this one (0 = off)
 }
+# Old team names in hist_quali -> today's team ids.
+TEAM_ALIAS = {"alfa": "2640", "alphatauri": "2636"}
 
 # F1 Fantasy 2026 scoring.
 RACE_PTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
@@ -122,21 +132,107 @@ def quali_gaps(conn, season, before_round):
     return out
 
 
+def team_round_gaps(conn, season, before_round=99):
+    """{round: {team: mean gap %}} for one season."""
+    out = {}
+    for r, g in quali_gaps(conn, season, before_round).items():
+        by = collections.defaultdict(list)
+        for (c, t), v in g.items():
+            by[TEAM_ALIAS.get(t, t)].append(v)
+        m = {t: sum(v) / len(v) for t, v in by.items()}
+        mid = statistics.median(m.values())   # against the field, as low-drag tracks squeeze all gaps
+        out[r] = {t: v - mid for t, v in m.items()}
+    return out
+
+
+def track_deviation(conn, season):
+    """{(circuit, team): gap % at that circuit minus the team's form in the
+    rounds around it (2 either side)}, for one past season."""
+    trg = team_round_gaps(conn, season)
+    circ = dict(conn.execute("SELECT round, circuit FROM hist_rounds WHERE season=?", (season,)))
+    out = {}
+    for r, g in trg.items():
+        for t, v in g.items():
+            near = [trg[x][t] for x in range(r - 2, r + 3) if x != r and x in trg and t in trg[x]]
+            if len(near) >= 2 and circ.get(r):
+                out[(circ[r], t)] = v - sum(near) / len(near)
+    return out
+
+
+_DEV = {}
+
+
+def track_affinity(conn, season, circuit, teams):
+    """{team: how much faster (-) or slower (+) than its usual form this team
+    has qualified at `circuit` in past seasons, shrunk toward 0}."""
+    out = {}
+    for t in teams:
+        num, den = 0.0, P["aff_prior"]
+        for y in range(season - 1, season - 5, -1):
+            if y not in _DEV:
+                _DEV[y] = track_deviation(conn, y)
+            d = _DEV[y].get((circuit, TEAM_ALIAS.get(t, t)))
+            if d is not None:
+                w = P["aff_age"] ** (season - 1 - y)
+                num += w * d
+                den += w
+        out[t] = num / den
+    return out
+
+
+_SIM = {}
+
+
+def circuit_similarity(conn, season):
+    """{(a, b): correlation of teams' track deviations at circuits a and b},
+    from the seasons before `season`."""
+    if season in _SIM:
+        return _SIM[season]
+    devs = collections.defaultdict(dict)   # circuit -> {(year, team): dev}
+    for y in range(season - 4, season):
+        if y not in _DEV:
+            _DEV[y] = track_deviation(conn, y)
+        for (c, t), d in _DEV[y].items():
+            devs[c][(y, t)] = d
+    out = {}
+    cs = list(devs)
+    for a in cs:
+        for b in cs:
+            k = [x for x in devs[a] if x in devs[b]]
+            if a == b or len(k) < 12:
+                continue
+            xa, xb = [devs[a][x] for x in k], [devs[b][x] for x in k]
+            try:
+                out[(a, b)] = statistics.correlation(xa, xb)
+            except statistics.StatisticsError:
+                pass
+    _SIM[season] = out
+    return out
+
+
 def pace_ratings(conn, season, rnd, drivers):
     """% off the fastest car for each (code, team) in `drivers`."""
     gaps = quali_gaps(conn, season, rnd)
     rounds = sorted(gaps, reverse=True)
     car, form = {}, {}
     teams = {t for _, t in drivers}
+    circ = dict(conn.execute("SELECT round, circuit FROM hist_rounds WHERE season=?", (season,)))
+    sim_c = circuit_similarity(conn, season) if P["sim_weight"] else {}
     for team in teams:
         num = den = 0.0
         for i, r in enumerate(rounds):
             g = [v for (c, t), v in gaps[r].items() if t == team]
             if g:
                 w = P["car_decay"] ** i
+                if sim_c:
+                    w *= 1 + P["sim_weight"] * max(0.0, sim_c.get((circ.get(r), circ.get(rnd)), 0.0))
                 num += w * sum(g) / len(g)
                 den += w
         car[team] = num / den if den else 2.0
+    if P["aff_weight"] and circ.get(rnd):
+        aff = track_affinity(conn, season, circ[rnd], teams)
+        for team in teams:
+            car[team] += P["aff_weight"] * aff[team]
     for code, team in drivers:
         num, den = 0.0, P["drv_prior"]
         for i, r in enumerate(rounds):

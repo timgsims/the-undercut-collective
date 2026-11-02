@@ -193,3 +193,11 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
   simulation saved for the round (`sim_history`, now with `xnn`), shown as "Brazil – very
   early" (before practice, past races only), "– post FP1/FP2/FP3", "– post qualifying",
   latest selected, plus the 12-race average. A stage keeps its last run once the next starts.
+
+- **2026-11-02: track history tested, left off.** F1FT plans the same ("track-similarity
+  weighting"). `sim.py` now has `aff_weight` (each team's qualifying at this circuit in
+  past seasons, against its form around then) and `sim_weight` (more weight on recent
+  rounds at circuits whose team order moved the same way). Backtest R5-18, before the weekend:
+  current 12.81; affinity 0.5 12.86, 1.0 12.94-13.00; similar tracks 1.0 12.79 (noise, and
+  worse after FP3), 3.0 12.85. 2026's new cars make older seasons a poor guide.
+  **Retest early 2027**, when 2026 is the previous season under the same rules.
