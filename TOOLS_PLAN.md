@@ -188,3 +188,8 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
    2027? Or go straight for the full model?
 3. Is Elite Data (what the global top 500 pick) worth the extra fetching?
 4. Anything F1FT does that you rely on that isn't covered here?
+
+- **2026-11-02: Simulation menu** in the Team Calculator, like F1FT: every stage the
+  simulation saved for the round (`sim_history`, now with `xnn`), shown as "Brazil – very
+  early" (before practice, past races only), "– post FP1/FP2/FP3", "– post qualifying",
+  latest selected, plus the 12-race average. A stage keeps its last run once the next starts.
