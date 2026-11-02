@@ -515,13 +515,18 @@ def save(conn, season, rnd, after, out, meta):
                      (season, rnd, pid, after, s["xpts"], s["xnn"], s["sd"], json.dumps(s["hist"]), now))
     conn.execute("INSERT OR REPLACE INTO sim_runs VALUES (?,?,?,?,?)",
                  (season, rnd, after, json.dumps(meta), now))
-    # The latest prediction at each stage, kept for sim_accuracy.py.
+    # The latest prediction at each stage, kept for sim_accuracy.py and the
+    # Team Calculator's Simulation menu (very early, post FP1, ...).
     conn.execute("""CREATE TABLE IF NOT EXISTS sim_history (
-        season INTEGER, round INTEGER, after TEXT, player_id TEXT, xpts REAL, made_at TEXT,
+        season INTEGER, round INTEGER, after TEXT, player_id TEXT, xpts REAL, made_at TEXT, xnn REAL,
         PRIMARY KEY (season, round, after, player_id))""")
+    if "xnn" not in {r[1] for r in conn.execute("PRAGMA table_info(sim_history)")}:
+        conn.execute("ALTER TABLE sim_history ADD COLUMN xnn REAL")
     for pid, samples in out.items():
-        conn.execute("INSERT OR REPLACE INTO sim_history VALUES (?,?,?,?,?,?)",
-                     (season, rnd, after, pid, round(sum(samples) / len(samples), 2), now))
+        conn.execute("INSERT OR REPLACE INTO sim_history (season, round, after, player_id, xpts, made_at, xnn) "
+                     "VALUES (?,?,?,?,?,?,?)",
+                     (season, rnd, after, pid, round(sum(samples) / len(samples), 2), now,
+                      round(sum(max(0, x) for x in samples) / len(samples), 2)))
     conn.commit()
 
 

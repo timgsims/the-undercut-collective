@@ -262,11 +262,27 @@ def read_tools_data(conn, season, race_name_by_round):
         src = None
         for a in predictor["assets"]:
             s = sims.get((target, a["id"]))
+            a["ax"], a["an"] = a["xp"], a["xn"]   # the 12-race average, for the Simulation menu
             if s:
                 a["xp"], a["xn"] = round(s[0], 1), round(s[1], 1)
                 src = sim_after.get(target)
+        # Every stage the simulation has saved for this round, oldest first,
+        # for the Simulation menu (the latest is what's shown by default).
+        stages = []
+        try:
+            got = {}
+            for after, pid, xp, xn, made in conn.execute(
+                    "SELECT after, player_id, xpts, xnn, made_at FROM sim_history WHERE season=? AND round=?",
+                    (season, target)):
+                s = got.setdefault(after, {"after": after, "made": made, "x": {}})
+                s["made"] = max(s["made"], made)
+                s["x"][pid] = [round(xp, 1), round(xn if xn is not None else max(0.0, xp), 1)]
+            order = ["pre", "fp1", "fp2", "fp3", "quali"]
+            stages = sorted(got.values(), key=lambda s: order.index(s["after"]) if s["after"] in order else 9)
+        except sqlite3.OperationalError:
+            pass
         calc = {"r": target, "name": race_name_by_round.get(target, f"Round {target}"),
-                "pricesFrom": T, "managers": mgrs, "src": src}
+                "pricesFrom": T, "managers": mgrs, "src": src, "sims": stages}
 
     colours = {k: [c, _ink(c)] for k, c in TEAM_COLOURS.items()}
     # ── Elite Data: the global top 500 (elite.py), next to the league ───────
@@ -386,6 +402,7 @@ TOOLS_HTML = r"""
   <div id="tcHead"></div>
   <div class="tl-note" id="tlCNote"></div>
   <div class="tl-ctl">
+    <div style="grid-column:1/-1"><label>Simulation</label><select id="tcSim"></select></div>
     <div><label>Manager</label><select id="tcMgr"></select></div>
     <div><label>Free transfers</label><select id="tcFree">
       <option value="0">0</option><option value="1">1</option><option value="2">2</option>
@@ -437,6 +454,7 @@ const TC=T.colours||{};
 // Same-width pills: the code and the number each get a fixed-width box.
 const K=a=>`<span class="tl-k">${a.c}</span>`, V=v=>`<span class="tl-v">${v}</span>`;
 const SIMWHEN={pre:'before practice',fp1:'after FP1',fp2:'after FP2',fp3:'after FP3',quali:'after qualifying'};
+const SIMSTAGE={pre:'very early',fp1:'post FP1',fp2:'post FP2',fp3:'post FP3',quali:'post qualifying'};
 const head=(r,name,sub)=>`<div class="tl-head"><span class="rn">R${r}</span><div class="nm">${name}<small>${sub}</small></div></div>`;
 // Constructors first, then drivers; each highest points first.
 const byPts=(a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.x-a.x||b.p-a.p);
@@ -538,9 +556,20 @@ function runC(){
       (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts and ${sd(top[0].dp-nowD)} price change on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
+// Simulation menu: each stage the simulation saved for this round (F1FT-style
+// "very early" before practice, then post FP1/FP2/FP3); the latest by default.
+const cS=$('tcSim'), SIMS=(C&&C.sims)||[], CAavg=Object.fromEntries(PA.map(a=>[a.id,[a.ax??a.xp,a.an??a.xn]]));
+function cSim(){const s=SIMS.find(x=>x.after===cS.value);
+  CA.forEach(a=>{const v=s&&s.x[a.id]?s.x[a.id]:CAavg[a.id];a.x=v[0];a.n=v[1];});}
 if(C){
-  $('tcHead').innerHTML=head(C.r,C.name,'Best teams for this race');
-  $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. ${C.src?`xPts come from our race simulation: the weekend run 10,000 times from each car's qualifying and practice pace, how hard the track is to pass on, reliability and overtaking, scored with the F1 Fantasy rules (last run ${SIMWHEN[C.src]||C.src})`:`xPts are each asset's average over its last 12 races, until the race simulation has run for this round`}${C.pricesFrom<C.r?`. Prices are today's (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}.`;
+  SIMS.slice().reverse().forEach(s=>cS.add(new Option(`${C.name} – ${SIMSTAGE[s.after]||s.after}`,s.after)));
+  cS.add(new Option(`12-race average (no simulation)`,''));
+  if(!SIMS.length)cS.value='';
+  const cHead=()=>{$('tcHead').innerHTML=head(C.r,C.name,'Best teams for this race · '+
+    (cS.value?`simulation ${SIMSTAGE[cS.value]||cS.value}`:'12-race average'));};
+  cS.onchange=()=>{cSim();cHead();cAssets();runC();};
+  cSim();cHead();
+  $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. ${SIMS.length?`xPts come from our race simulation: the weekend run 10,000 times from each car's qualifying and practice pace, how hard the track is to pass on, reliability and overtaking, scored with the F1 Fantasy rules. Pick a run under <b>Simulation</b>: <b>very early</b> is from past races only, before any practice; each later one adds that session from this weekend`:`xPts are each asset's average over its last 12 races, until the race simulation has run for this round`}${C.pricesFrom<C.r?`. Prices are today's (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}.`;
   cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
   if(C.managers.some(m=>m.m==='Tim'))cM.value='Tim';
 }
