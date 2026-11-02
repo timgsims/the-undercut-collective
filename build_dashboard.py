@@ -3553,6 +3553,18 @@ def next_weekend_started(db_path, season, after_round, now=None):
     return any(datetime.fromisoformat(r[0]) <= now for r in rows)
 
 
+def sessions_done(db_path, season, rnd):
+    """How many of the round's scored sessions are done (session_status)."""
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM session_status WHERE season=? AND round=? AND is_done=1",
+                            (season, rnd)).fetchone()[0]
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        conn.close()
+
+
 def build_pages(data, db_path=DB_PATH, now=None):
     """(index.html, prev.html) for a computed full dataset. The hidden weekend
     is the latest one with points, until the next weekend reaches FP1 -- by
@@ -3565,7 +3577,9 @@ def build_pages(data, db_path=DB_PATH, now=None):
     hidden = data["races_done"][-1]
     if next_weekend_started(db_path, SEASON, hidden["round"], now):
         return build_html(data), stub
-    key = f"{SEASON}-R{hidden['round']}"
+    # One reveal per scored session, not per weekend: revealing qualifying
+    # mustn't also reveal the race (Tim, 2026-11-02, Mexico).
+    key = f"{SEASON}-R{hidden['round']}-s{sessions_done(db_path, SEASON, hidden['round'])}"
     tmp = spoiler_free_db(db_path, SEASON, hidden["round"])
     try:
         prev = compute(read_database(tmp))
