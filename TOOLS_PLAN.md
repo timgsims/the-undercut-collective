@@ -209,3 +209,7 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
   drivers, -0.13 constructors. No gain from: race-craft rating (places beaten vs grid slot), correcting
   to recent points, drv_prior, drv_decay, car_decay, dnf_prior (all within 0.03 of 12.74). Don't retune
   to match F1FT without several weekends of their numbers against results.
+
+- **2026-11-06: recent-weighted reliability tested, not kept.** R5-19, season-long vs each older round
+  counting 5-30% less: pre-weekend 12.73 vs 12.74-12.84, post FP3 12.66 vs 12.64-12.72, post quali
+  12.70 vs 12.68-12.73. Within noise at best, worse at 0.7.
