@@ -201,3 +201,11 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
   current 12.81; affinity 0.5 12.86, 1.0 12.94-13.00; similar tracks 1.0 12.79 (noise, and
   worse after FP3), 3.0 12.85. 2026's new cars make older seasons a poor guide.
   **Retest early 2027**, when 2026 is the previous season under the same rules.
+
+- **2026-11-05: checked against F1FT's Brazil Early, sim left unchanged.** Tim's team: F1FT 259.4, ours
+  217.3, nearly all at the front. Ours is calibrated: on R5-19 pre-weekend, actual on predicted has slope
+  1.01; non-sprint driver total actual 219, ours ~230 (R20 232); F1FT's Mexico total was 247 (one race).
+  Per-driver misses (VER -8.7, ANT -7.2, RUS +9.6) don't persist: first vs second half correlation 0.07
+  drivers, -0.13 constructors. No gain from: race-craft rating (places beaten vs grid slot), correcting
+  to recent points, drv_prior, drv_decay, car_decay, dnf_prior (all within 0.03 of 12.74). Don't retune
+  to match F1FT without several weekends of their numbers against results.
