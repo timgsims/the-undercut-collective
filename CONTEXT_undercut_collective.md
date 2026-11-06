@@ -139,7 +139,7 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
     lock reminder and new prices can fall outside race weekends): decides
     what's due and sends each thing once (`notify_log`). Kinds: lock (2 h
     before teams lock, from F1 Fantasy's schedule feed; 7:30pm the evening
-    before a lock in the night), fp1, inactive (a picked driver with
+    before a lock in the night), sim (each new simulation stage once it's on the site, until the lock; replaced fp1 on 7 Nov 2026, on for everyone unless switched off), inactive (a picked driver with
     `players.active=0`), quali, final, prices, chips (4, 2 and 1 races left).
     Nothing goes out 10pm-7:30am NZ; it waits for 7:30am unless stale by then.
     `--dry-run` prints what would go (with `NOTIFY_NOW=<iso time>` to pretend
