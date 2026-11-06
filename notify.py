@@ -6,7 +6,10 @@ sends it to every phone that turned notifications on in the dashboard.
 What it sends (each person picks which, and which manager they are):
   lock      2 hours before teams lock (qualifying, or sprint qualifying on a
             sprint weekend). If that's in the night, 7:30pm the evening before.
-  fp1       after FP1, when the Tools tab has practice pace.
+  sim       a new simulation on the site for the next round to lock: very
+            early once the last round is final, then post FP1, FP2 and FP3.
+            Replaced the fp1 message (7 Nov 2026), which also only reached
+            devices with no manager picked.
   quali     when qualifying points come in: your points and place this weekend.
   final     when a round's points are final: score, weekend place, overall place.
   prices    when F1 publishes the next round's prices: your team's value.
@@ -29,6 +32,7 @@ from zoneinfo import ZoneInfo
 
 BASE = Path(__file__).resolve().parent
 DB = BASE / "f1_data.db"
+TOOLS_BUILT = BASE / "secrets" / "tools_built.json"   # what the site shows (gate_check.py)
 TOKEN_FILE = BASE / "secrets" / "push_token"
 PUSH_URL = "http://127.0.0.1:3092/internal/send"
 RACEDAY_FEED = "https://fantasy.formula1.com/feeds/schedule/raceday_en.json"
@@ -36,6 +40,7 @@ NZ = ZoneInfo("Pacific/Auckland")
 QUIET_FROM, QUIET_TO = dt.time(22, 0), dt.time(7, 30)
 CHIPS = ["Wildcard", "Limitless", "Extra DRS", "No Negative", "Auto Pilot", "Final Fix"]
 SITE = "https://f1fantasy.simsey.co.nz/"
+SIM_STAGE = {"pre": "very early", "fp1": "post FP1", "fp2": "post FP2", "fp3": "post FP3"}
 
 
 def quiet(t):
@@ -132,6 +137,15 @@ class League:
                                              (self.season, mid))}
 
 
+def published_stage(rnd):
+    """The simulation stage the site shows for a round, or None: a message
+    must not beat the rebuild that puts it on the site."""
+    try:
+        return dict(json.loads(TOOLS_BUILT.read_text())["sims"]).get(rnd)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def place(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
@@ -169,14 +183,20 @@ def due_messages(lg, locks, now):
                                  "The Team Calculator has the latest predictions."})
         out.append((f"lock:{lg.season}:{nxt}", lock, lock_reminder_time(lock), msgs))
 
-        # After FP1 (only if it ends before the lock reminder would go)
-        fp1 = lg.fp1.get(nxt)
-        if fp1:
-            done = fp1 + dt.timedelta(minutes=75)
-            out.append((f"fp1:{lg.season}:{nxt}", min(lock, lock_reminder_time(lock)), done, [
-                {"type": "fp1", "manager": None, "tag": f"fp1-{nxt}", "url": SITE + "#tools",
-                 "title": f"{race}: practice is under way",
-                 "body": "FP1 is done. The Team Calculator and Budget Builder now use this weekend's pace."}]))
+        # A new simulation on the site. Only the latest stage: ones that came
+        # in overnight are skipped for the newest. "Very early" for the next
+        # round waits for this round to be final, not its qualifying.
+        stage = published_stage(nxt)
+        final = lg.c.execute("SELECT 1 FROM round_finalized_at WHERE season=? AND round=?",
+                             (lg.season, cur)).fetchone()
+        if stage in SIM_STAGE and (stage != "pre" or final):
+            body = ("Based on past races, before any practice." if stage == "pre"
+                    else "Now using this weekend's practice pace.")
+            msg = {"type": "sim", "tag": f"sim-{nxt}", "url": SITE + "#tools",
+                   "title": f"{race} simulation: {SIM_STAGE[stage]}",
+                   "body": f"{body} See the Team Calculator before teams lock {when_nz(lock, now)}."}
+            out.append((f"sim:{lg.season}:{nxt}:{stage}", lock, now - dt.timedelta(days=30),
+                        [{**msg, "manager": m} for m in [None] + [lg.managers[x] for x in mids]]))
 
         # A driver who isn't racing, in someone's team
         inactive = {p for (p,) in lg.c.execute("SELECT id FROM players WHERE active=0")}

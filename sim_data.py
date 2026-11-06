@@ -183,7 +183,12 @@ def fetch_practice(conn, season, rnd, date):
             continue
         drivers = {d["driver_number"]: d["name_acronym"]
                    for d in get(f"{OPENF1}/drivers?session_key={s['session_key']}")}
-        laps = get(f"{OPENF1}/laps?session_key={s['session_key']}")
+        try:
+            laps = get(f"{OPENF1}/laps?session_key={s['session_key']}")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:   # 404: a session that hasn't run yet
+                raise
+            laps = []
         if not laps:
             continue   # not run yet, or not published yet
         by = {}

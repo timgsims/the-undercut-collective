@@ -13,7 +13,7 @@ PUSH_API = "https://f1push.simsey.co.nz"
 # results (SPOILERS) start switched off (Tim, 1 Nov 2026); the rest start on.
 KINDS = [
     ("lock", "Team lock reminder", "2 hours before teams lock, or 7:30pm the night before if it's in the night"),
-    ("fp1", "After practice", "When FP1 is done and the Tools tab has this weekend's pace"),
+    ("sim", "New simulation", "When a new simulation is out: very early, then after each practice"),
     ("inactive", "Driver not racing", "If a driver in your team won't be in the next race"),
     ("quali", "Qualifying points", "Your points and place after qualifying (a spoiler if you watch later)"),
     ("final", "Final points", "Your score and league place once a round is final (also a spoiler)"),

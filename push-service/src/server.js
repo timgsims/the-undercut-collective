@@ -28,7 +28,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeVapidKeys, sendPush } from './webpush.js';
 
-export const TYPES = ['lock', 'fp1', 'quali', 'final', 'prices', 'inactive', 'chips'];
+export const TYPES = ['lock', 'fp1', 'sim', 'quali', 'final', 'prices', 'inactive', 'chips'];
 // These give away results, so a device gets them only once it switches them on (Tim, 1 Nov 2026).
 const OFF_UNLESS_CHOSEN = new Set(['quali', 'final']);
 
