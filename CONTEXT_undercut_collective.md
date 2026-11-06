@@ -326,3 +326,5 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
   only matters near the end of the season.
 - **Season-archive navigation** — not needed until a 2nd season of data
   exists.
+
+- **Tools tab rebuilds (2026-11-07):** `gate_check.py` also rebuilds on a new simulation stage or new prices, as those change with no points moving. OpenF1 returns 401 while a session is live (from about 40 min before); `sim_data.py` waits for the next run.
