@@ -13,8 +13,15 @@ round have moved since the last successful build — a stewards' decision applie
 retroactively, e.g. the penalties reinstated against Gasly for 2026 Monaco —
 we rebuild regardless of how long ago that round finished. See points_digest.py.
 
+A second exception: the Tools tab has news of its own between scored sessions.
+A new simulation stage (very early, post FP1...) or new prices rebuild the site
+even though no points have moved (Tim, 2026-11-07: Brazil's FP1 simulation ran
+but never reached the site, as the window had closed and qualifying was a day
+off). `--mark-tools` records what's been published, after a successful build.
+
 Exit 0 = proceed with build+push. Exit 1 = skip this run.
 """
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -23,7 +30,19 @@ from datetime import datetime, timezone
 import points_digest
 
 DB_PATH = Path(__file__).resolve().parent / "f1_data.db"
+TOOLS_MARK = Path(__file__).resolve().parent / "secrets" / "tools_built.json"
 FINALIZED_WINDOW_HOURS = 48
+
+
+def tools_state(conn, season):
+    """What the Tools tab shows that can change with no points moving."""
+    try:
+        sims = conn.execute("SELECT round, after FROM sim_runs WHERE season=? ORDER BY round", (season,)).fetchall()
+    except sqlite3.OperationalError:
+        sims = []
+    priced = conn.execute("SELECT MAX(round) FROM player_results WHERE season=? AND value IS NOT NULL",
+                          (season,)).fetchone()[0]
+    return json.dumps({"sims": sims, "priced": priced})
 
 
 def main():
@@ -34,6 +53,14 @@ def main():
     row = conn.execute("SELECT MAX(season) AS s FROM races").fetchone()
     season = row[0] if row else None
     if season is None:
+        sys.exit(0)
+
+    state = tools_state(conn, season)
+    if "--mark-tools" in sys.argv:
+        TOOLS_MARK.write_text(state)
+        return
+    if not TOOLS_MARK.exists() or TOOLS_MARK.read_text() != state:
+        print("Tools tab has a new simulation stage or new prices: rebuilding")
         sys.exit(0)
 
     # Retro-correction check, ahead of the window logic below: if the points of

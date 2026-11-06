@@ -244,7 +244,15 @@ def update(conn, current_season, practice_rounds=None):
         # Practice starts two days before the race date.
         if date <= time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3 * 86400)) and \
            not marked(conn, f"practice_done:{current_season}:{rnd}"):
-            fetch_practice(conn, current_season, rnd, date)
+            try:
+                fetch_practice(conn, current_season, rnd, date)
+            except urllib.error.HTTPError as e:
+                if e.code != 401:
+                    raise
+                # OpenF1 shuts its free API while a session is live, from about
+                # 40 minutes before it; the next hourly run picks it up.
+                print(f"OpenF1 locked for a live session; R{rnd} practice waits for the next run")
+                continue
             if date < today and conn.execute(
                     "SELECT COUNT(*) FROM fetch_marks WHERE key LIKE ?",
                     (f"practice:{current_season}:{rnd}:%",)).fetchone()[0] >= 3:

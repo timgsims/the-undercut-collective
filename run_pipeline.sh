@@ -87,6 +87,7 @@ if python3 gate_check.py; then
         # adopt the corrected numbers as "already published" and the fix
         # would never reach the site.
         python3 record_digest.py || echo "record_digest.py failed (non-fatal)"
+        python3 gate_check.py --mark-tools || echo "gate_check.py --mark-tools failed (non-fatal)"
     else
         echo "build_dashboard.py failed (exit $build_status) — points baseline left alone so the next run retries."
     fi
