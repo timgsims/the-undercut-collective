@@ -38,10 +38,10 @@ SIMS = 10000
 
 # Tuned by sim_backtest.py on 2026 rounds 5-18 (see TOOLS_PLAN.md).
 P = {
-    "car_decay": 0.75,     # weight of each older round in car pace
+    "car_decay": 0.5,      # weight of each older round in car pace
     "drv_decay": 0.9,      # weight of each older round in driver form
-    "drv_prior": 0.75,      # rounds of "same as team-mate" a driver's form starts from
-    "gap_cap": 2.0,        # % off pole a bad day counts as at most
+    "drv_prior": 1.5,       # rounds of "same as team-mate" a driver's form starts from
+    "gap_cap": 4.0,        # % off pole a bad day counts as at most
     "sd_quali": 0.45,      # % noise per driver in qualifying
     "slot": 0.06,          # % of lap time a grid slot is worth in the race
     "sprint_sd": 0.7,      # sprint race noise, as a share of the race's
@@ -49,7 +49,7 @@ P = {
     "q_weight": 0.3,       # weight of this weekend's qualifying in race pace
     "lr_weight": 0.0,      # weight of FP2 long runs vs one-lap pace: off, as 0.2-0.7 all
                            # made the 2026 backtest worse (12.74 -> 12.78-13.47)
-    "dnf_prior": 6,        # starts of league-average reliability a team starts from
+    "dnf_prior": 20,       # starts of league-average reliability a team starts from
     "ot_prior": 4,         # races of field-average overtakes a driver starts from
     "ot_gain": 0.25,       # extra overtakes per place gained
     # Track history (2026-11-02): both off. On 2026 R5-18 every setting made the
@@ -60,14 +60,16 @@ P = {
     "aff_age": 0.5,        # weight of each older season in that
     "aff_prior": 1.0,      # seasons of "no track effect" it starts from
     "sim_weight": 0.0,     # extra weight on recent rounds at circuits like this one (0 = off)
-    # Tim's call, 7 Nov 2026: match F1FT over the backtest (see TOOLS_PLAN.md). fp_weight and
-    # drv_prior above were moved too, from 0.15 and 3.0. Refit with ~/f1ft-snapshots.
-    "fp_driver": 0.5,      # share of practice pace taken from the driver, the rest from the team average
-    "pace_mult": 1.25,      # stretches the gaps between cars
-    "sd_mult": 0.5,        # race noise against what the track history calibrates to
-    "dnf_mult": 0.8,       # retirement rates
-    "ot_mult": 1.0,        # overtakes
-    "pit_add": 2.0,        # extra constructor points a race
+    # Tim's call, 7 Nov 2026: be right about real results, not match F1FT. Fitted on squared
+    # error over R3-19 at all stages (see TOOLS_PLAN.md). Average miss alone favours a typical
+    # weekend over expected points. dnf_mult is below the true rate on purpose: the real rate
+    # needs about 0.8, but team records are noisy and 0.65 with dnf_prior 20 scored better.
+    "fp_driver": 0.25,     # share of practice pace taken from the driver, the rest from the team average
+    "pace_mult": 1.0,       # stretches the gaps between cars
+    "sd_mult": 0.6,        # race noise against what the track history calibrates to
+    "dnf_mult": 0.65,      # retirement rates
+    "ot_mult": 0.6,        # overtakes
+    "pit_add": 0.0,        # extra constructor points a race
 }
 # Old team names in hist_quali -> today's team ids.
 TEAM_ALIAS = {"alfa": "2640", "alphatauri": "2636"}

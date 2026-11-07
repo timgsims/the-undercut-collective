@@ -220,4 +220,16 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
   `drv_prior` 0.75. Average gap to F1FT per asset: Mexico 2.55 to 1.91, Brazil 4.07 to 2.86. Fit on one race,
   tested on the other: 2.55 to 2.22, 4.07 to 3.57. Cost on R5-19 backtest: pre 12.73 to 12.89, post FP3 12.66 to
   12.75, post quali 12.70 to 12.68. Price odds still match (xD gap 0.03). Still low on NOR, VER, MCL.
-  Add a snapshot each weekend and refit; two races is a small sample.
+  Superseded the same day, see the next entry.
+- **2026-11-07: sim refit to real results (Tim: don't mimic F1FT, be the best).** Replaces the F1FT fit.
+  Goal is now real scores at every stage, R3-19, on squared error, as average miss rewards a typical weekend
+  rather than expected points. Settings: `car_decay` 0.5, `drv_prior` 1.5, `gap_cap` 4, `dnf_prior` 20,
+  `fp_driver` 0.25, `pace_mult` 1.0, `sd_mult` 0.6, `dnf_mult` 0.65, `ot_mult` 0.6, `pit_add` 0.
+  Squared error, avg of pre/FP3/quali: old 17.31, F1FT fit 17.28, new 16.56 (fitted on these races, so flattering).
+  Trained on one half, tested on the other: R12-19 old 18.00, fit 17.91, unseen 17.51; R3-11 old 16.67, fit 16.71,
+  unseen 15.84. Bias per asset: old +1.3, fit +2.8, new +0.45. Correlation post FP3: .740, .752, .768.
+  Gap to F1FT goes up: Mexico 3.61, Brazil 4.48 (we now sit ~3 pts per asset below them).
+  Real retirements 17.6%, sim base rate 21%, so a true rate needs `dnf_mult` ~0.8. Lower still scored better,
+  as team records are noisy; don't push it (search went to 0.3 = ~6%, not credible, nor `ot_mult` 0.3). Sim
+  overtakes are probably too high: unchecked. Team-pick test not rerun for these settings: over 8 races it's noise.
+  Next: repeat after Abu Dhabi and in 2027; settings came from 17 races of one rule set.
