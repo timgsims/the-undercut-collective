@@ -213,3 +213,11 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
 - **2026-11-06: recent-weighted reliability tested, not kept.** R5-19, season-long vs each older round
   counting 5-30% less: pre-weekend 12.73 vs 12.74-12.84, post FP3 12.66 vs 12.64-12.72, post quali
   12.70 vs 12.68-12.73. Within noise at best, worse at 0.7.
+
+- **2026-11-07: sim fitted to F1FT (Tim: he trusts it, get closer).** Fitted to their full lists, Mexico
+  post-FP3 and Brazil post-FP2 (`~/f1ft-snapshots/`). New: `fp_driver` 0.5 (half of practice pace from the
+  driver, not the team), `pace_mult` 1.25, `sd_mult` 0.5, `dnf_mult` 0.8, `pit_add` 2; `fp_weight` 0.25,
+  `drv_prior` 0.75. Average gap to F1FT per asset: Mexico 2.55 to 1.91, Brazil 4.07 to 2.86. Fit on one race,
+  tested on the other: 2.55 to 2.22, 4.07 to 3.57. Cost on R5-19 backtest: pre 12.73 to 12.89, post FP3 12.66 to
+  12.75, post quali 12.70 to 12.68. Price odds still match (xD gap 0.03). Still low on NOR, VER, MCL.
+  Add a snapshot each weekend and refit; two races is a small sample.

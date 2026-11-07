@@ -40,12 +40,12 @@ SIMS = 10000
 P = {
     "car_decay": 0.75,     # weight of each older round in car pace
     "drv_decay": 0.9,      # weight of each older round in driver form
-    "drv_prior": 3.0,      # rounds of "same as team-mate" a driver's form starts from
+    "drv_prior": 0.75,      # rounds of "same as team-mate" a driver's form starts from
     "gap_cap": 2.0,        # % off pole a bad day counts as at most
     "sd_quali": 0.45,      # % noise per driver in qualifying
     "slot": 0.06,          # % of lap time a grid slot is worth in the race
     "sprint_sd": 0.7,      # sprint race noise, as a share of the race's
-    "fp_weight": 0.15,     # weight of each practice session's pace (max 3)
+    "fp_weight": 0.25,     # weight of each practice session's pace (max 3)
     "q_weight": 0.3,       # weight of this weekend's qualifying in race pace
     "lr_weight": 0.0,      # weight of FP2 long runs vs one-lap pace: off, as 0.2-0.7 all
                            # made the 2026 backtest worse (12.74 -> 12.78-13.47)
@@ -60,6 +60,14 @@ P = {
     "aff_age": 0.5,        # weight of each older season in that
     "aff_prior": 1.0,      # seasons of "no track effect" it starts from
     "sim_weight": 0.0,     # extra weight on recent rounds at circuits like this one (0 = off)
+    # Tim's call, 7 Nov 2026: match F1FT over the backtest (see TOOLS_PLAN.md). fp_weight and
+    # drv_prior above were moved too, from 0.15 and 3.0. Refit with ~/f1ft-snapshots.
+    "fp_driver": 0.5,      # share of practice pace taken from the driver, the rest from the team average
+    "pace_mult": 1.25,      # stretches the gaps between cars
+    "sd_mult": 0.5,        # race noise against what the track history calibrates to
+    "dnf_mult": 0.8,       # retirement rates
+    "ot_mult": 1.0,        # overtakes
+    "pit_add": 2.0,        # extra constructor points a race
 }
 # Old team names in hist_quali -> today's team ids.
 TEAM_ALIAS = {"alfa": "2640", "alphatauri": "2636"}
@@ -398,12 +406,22 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
         tm = {t: sum(v) / len(v) for t, v in team_fp.items()}
         if tm:
             base = min(tm.values())
+            own_base = min(fp[c] for c, _ in keys if c in fp)
             hist_team = collections.defaultdict(list)
             for k in keys:
                 hist_team[k[1]].append(pace[k])
+            a = P["fp_driver"]
+            new = {}
             for k in keys:
                 if k[1] in tm:
-                    pace[k] += P["fp_weight"] * ((tm[k[1]] - base) - sum(hist_team[k[1]]) / len(hist_team[k[1]]))
+                    team_gap = (tm[k[1]] - base) - sum(hist_team[k[1]]) / len(hist_team[k[1]])
+                    own_gap = fp[k[0]] - own_base - pace[k] if k[0] in fp else team_gap
+                    new[k] = pace[k] + P["fp_weight"] * ((1 - a) * team_gap + a * own_gap)
+            pace.update(new)
+
+    if P["pace_mult"] != 1.0:
+        top = min(pace.values())
+        pace = {k: top + (v - top) * P["pace_mult"] for k, v in pace.items()}
 
     ov = load_overrides(season, rnd)
     for code, delta in ov.get("pace", {}).items():
@@ -443,6 +461,8 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
 
     shuffle, avg_abs = track_shuffle(conn, circuit)
     dnf, dnf_avg = dnf_rates(conn, season, rnd)
+    dnf = {t: r * P["dnf_mult"] for t, r in dnf.items()}
+    dnf_avg *= P["dnf_mult"]
     flw = fl_weights(conn)
     ot, sot, pit = event_history(conn, season, rnd)
     field_ot = statistics.mean([o for v in ot.values() for _, o in v]) if ot else 5.0
@@ -453,7 +473,7 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
         return (sum(v) + P["ot_prior"] * prior_mean) / (len(v) + P["ot_prior"])
 
     did = {k: pid for (pid, c, t), k in zip(drivers, keys)}
-    ot_mean = {k: shrunk(ot.get(did[k], []), field_ot) * shuffle for k in keys}
+    ot_mean = {k: shrunk(ot.get(did[k], []), field_ot) * shuffle * P["ot_mult"] for k in keys}
     sot_mean = {k: shrunk(sot.get(did[k], []), field_sot) * shuffle for k in keys}
     pit_hist = {c: [p for _, p in pit.get(c, [])[-10:]] or [3] for c in cons}
 
@@ -461,7 +481,7 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
     # grid) matches the track's history.
     target = avg_abs * shuffle
     slot = P["slot"]
-    sd = calibrate_sd(pace, rpace, keys, target, rng, slot, known_grid)
+    sd = calibrate_sd(pace, rpace, keys, target, rng, slot, known_grid) * P["sd_mult"]
 
     out = {pid: [] for pid, _, _ in drivers}
     out.update({c: [] for c in cons})
@@ -492,7 +512,7 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
             team_pts[t] += pts - (10 if r["dotd"] else 0)
             team_q[t].append(qpos.get(k))
         for cid in cons:
-            p = team_pts[cid] + quali_bonus(team_q[cid]) + rng.choice(pit_hist[cid])
+            p = team_pts[cid] + quali_bonus(team_q[cid]) + rng.choice(pit_hist[cid]) + P["pit_add"]
             out[cid].append(p)
     meta = {"circuit": circuit, "sprint": bool(sprint), "after": after, "shuffle": round(shuffle, 2),
             "sd": round(sd, 3), "pace": {f"{k[0]}": round(v, 3) for k, v in pace.items()}}
