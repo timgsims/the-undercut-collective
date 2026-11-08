@@ -384,7 +384,7 @@ TOOLS_HTML = r"""
 .tl-pen .why{font-size:11px;color:#888;line-height:1.4;margin-top:2px}
 .tl-pen .why a{color:#8ab4f8}
 .tl-pen .exp{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#d9a441;margin-left:6px}
-.tl-team{display:grid;grid-template-columns:16px 1fr 46px 42px;gap:4px;align-items:center;padding:8px 0;border-bottom:0.5px solid #2a2a2a}
+.tl-team{display:grid;grid-template-columns:18px minmax(0,1fr) 46px 44px;gap:6px;align-items:center;padding:10px 0;border-bottom:0.5px solid #2a2a2a}
 .tl-rank{font-size:11px;color:#666}
 .tl-codes{display:flex;flex-wrap:wrap;gap:3px}
 .tl-code{display:inline-block;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;padding:2px 5px;border-radius:5px;background:#252525;color:#ddd;white-space:nowrap}
@@ -419,14 +419,28 @@ TOOLS_HTML = r"""
 .tl-head small{display:block;font-size:11px;font-weight:400;color:#888;margin-top:2px}
 .tl-io{flex-basis:100%;font-size:10px;color:#888;margin-top:2px}
 .tl-team .tl-io{margin-top:5px}
-.tl-lu{display:grid;grid-template-columns:repeat(4,minmax(0,46px));grid-auto-rows:auto;gap:4px}
+.tl-lu{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;max-width:290px}
 .tl-lu .hd{font-size:10px;color:#777;text-transform:uppercase;letter-spacing:.04em;text-align:center;grid-row:1}
-.tl-tile{border-radius:5px;overflow:hidden;background:#252525;text-align:center;font-variant-numeric:tabular-nums;min-width:0}
-.tl-tile .k{display:block;font-size:11px;font-weight:700;padding:3px 0 2px;letter-spacing:.02em}
-.tl-tile .v{display:block;font-size:10px;color:#bbb;padding:2px 0 3px}
+.tl-tile{border-radius:6px;overflow:hidden;background:#252525;text-align:center;font-variant-numeric:tabular-nums;min-width:0}
+.tl-tile .k{display:block;font-size:12px;font-weight:700;padding:4px 0 3px;letter-spacing:.02em}
+.tl-tile .v{display:block;font-size:12px;color:#e6e6e6;padding:3px 0 0}
+.tl-tile .d{display:block;font-size:10px;color:#888;padding:1px 0 4px}
+.tl-tile .d.up,.tl-num small.up{color:#88dd44}.tl-tile .d.dn,.tl-num small.dn{color:#ff7a7a}
 .tl-tile.x2{box-shadow:0 0 0 2px #88dd44}
 .tl-tile.x3{box-shadow:0 0 0 2px #ffaa44}
 .tl-tile.kept{opacity:.4}
+.tl-team .tl-num{font-size:14px}
+.tl-team .tl-num b{font-weight:600}
+.tl-hd{padding:8px 0 6px}
+.tl-hd .hf,.tl-hd .hs{cursor:pointer;-webkit-user-select:none;user-select:none}
+.tl-hd .hf.act,.tl-hd .hs.on{color:#88dd44}
+.tl-hd .hf.on{color:#e8e8e6}
+.tl-hd .hs{display:block;font-size:10px;color:#777;letter-spacing:.04em;padding:2px 0}
+.tl-fp{padding:8px 0 10px;border-bottom:0.5px solid #2a2a2a}
+.tl-fp .tl-assets button{font-size:12px;padding:6px 8px}
+.tl-rank{text-align:center}
+.tl-pin{display:block;margin:6px auto 0;padding:2px;background:none;border:0;color:#4a4a4a;cursor:pointer;line-height:0}
+.tl-pin.on{color:#ffcc33}
 .tl-sec{font-size:11px;color:#888;padding:8px 0 2px;border-bottom:0.5px solid #2a2a2a}
 .tl-team.now{background:#202020;margin:0 -12px;padding:8px 12px}
 .tl-sub button{padding:8px 4px}
@@ -528,10 +542,14 @@ function bestTeams(assets,o){
   const D=assets.filter(a=>a.t==='D'&&ok(a)), C=assets.filter(a=>a.t==='C'&&ok(a));
   const incD=D.filter(a=>o.inc.has(a.id)), incC=C.filter(a=>o.inc.has(a.id));
   const budget=o.chip==='LL'?1e9:o.budget;
-  const ds=combos(D,5).filter(s=>incD.every(a=>s.includes(a))).map(s=>{
+  const capA=o.cap?D.find(a=>a.id===o.cap):null;
+  if(o.cap&&!capA)return [];
+  const ds=combos(D,5).filter(s=>incD.every(a=>s.includes(a))&&(!capA||s.includes(capA))).map(s=>{
     const v=s.map(val).sort((a,b)=>b-a);
     const base=v.reduce((a,b)=>a+b,0);
-    const pts=o.chip==='X3'?base+2*v[0]+v[1]:base+v[0];
+    let pts=o.chip==='X3'?base+2*v[0]+v[1]:base+v[0];
+    if(capA){const oth=s.filter(a=>a!==capA).map(val).sort((a,b)=>b-a);
+      pts=o.chip==='X3'?base+2*val(capA)+oth[0]:base+val(capA);}
     const d=s.reduce((a,b)=>a+(b.d||0),0);
     return {s,cost:s.reduce((a,b)=>a+b.p,0),pts,d,r:pts+w*d};
   }).sort((a,b)=>b.r-a.r);
@@ -550,43 +568,91 @@ function bestTeams(assets,o){
       if(top.length>N)top.pop();
       if(top.length>=N)floor=top[top.length-1].score;}}
   return top;}
-function boosts(drivers,chip){const v=drivers.map(a=>[chip==='NN'?a.n:a.x,a.id]).sort((a,b)=>b[0]-a[0]);
-  return chip==='X3'?{[v[0][1]]:'x3',[v[1][1]]:'x2'}:{[v[0][1]]:'x2'};}
+function boosts(drivers,chip,cap){
+  const v=drivers.map(a=>[chip==='NN'?a.n:a.x,a.id]).sort((a,b)=>b[0]-a[0]);
+  if(!v.length)return {};
+  if(cap&&drivers.some(a=>a.id===cap)){const o=v.find(x=>x[1]!==cap);
+    return chip==='X3'&&o?{[cap]:'x3',[o[1]]:'x2'}:{[cap]:'x2'};}
+  return chip==='X3'&&v[1]?{[v[0][1]]:'x3',[v[1][1]]:'x2'}:{[v[0][1]]:'x2'};}
 // A team laid out like f1fantasytools.com: the two constructors stacked on the
 // left, the boosted driver (2x, or 3x over 2x with Extra DRS) next to them, and
-// the other drivers in a 2x2 block. Each tile shows the asset's (expected) points.
-// With a starting team, the assets it already has are dimmed.
-function lineup(t,b,start,row0=1){
-  const tile=(a,pos)=>`<div class="tl-tile ${b[a.id]||''}${start&&start.has(a.id)?' kept':''}" style="${pos}"><span class="k" style="${tc(a)}">${a.c}</span><span class="v">${Math.round(a.x)}</span></div>`;
-  const r=n=>`grid-row:${row0+n}`;
+// the other drivers in a 2x2 block. Each tile shows the asset's (expected)
+// points and price change. With a starting team, assets it already has are dimmed.
+function lineup(t,b,start,dec){
+  const tile=(a,pos)=>{const d=a.d, dc=d==null?'':d>0.004?' up':d<-0.004?' dn':'';
+    const ds=d==null?'–':(d>0.004?'+':d<-0.004?'−':'')+Math.abs(d).toFixed(dec?2:1);
+    return `<div class="tl-tile ${b[a.id]||''}${start&&start.has(a.id)?' kept':''}" style="${pos}"><span class="k" style="${tc(a)}">${a.c}</span><span class="v">${dec?(+a.x).toFixed(1):Math.round(a.x)}</span><span class="d${dc}">${ds}</span></div>`;};
   const cs=t.c.slice().sort((a,b)=>b.x-a.x), ds=t.d.slice().sort((a,b)=>b.x-a.x);
   let up=ds.filter(a=>b[a.id]).sort((a,c)=>(b[a.id]==='x3'?-1:1)-(b[c.id]==='x3'?-1:1));
   let rest=ds.filter(a=>!b[a.id]);
   if(!up.length&&rest.length)up=[rest.shift()];
-  let h=cs.map((a,i)=>tile(a,`grid-column:1;${r(i)}`)).join('');
-  h+=up.length===1?tile(up[0],`grid-column:2;grid-row:${row0}/span 2;align-self:center`)
-    :up.map((a,i)=>tile(a,`grid-column:2;${r(i)}`)).join('');
-  h+=rest.map((a,i)=>tile(a,`grid-column:${3+i%2};${r(Math.floor(i/2))}`)).join('');
+  let h=cs.map((a,i)=>tile(a,`grid-column:1;grid-row:${i+1}`)).join('');
+  h+=up.length===1?tile(up[0],`grid-column:2;grid-row:1/span 2;align-self:center`)
+    :up.map((a,i)=>tile(a,`grid-column:2;grid-row:${i+1}`)).join('');
+  h+=rest.map((a,i)=>tile(a,`grid-column:${3+i%2};grid-row:${1+Math.floor(i/2)}`)).join('');
   return `<div class="tl-lu">${h}</div>`;}
-function teamHead(chip,pts,cost){
-  return `<div class="tl-team" style="padding:6px 0 4px"><div></div><div class="tl-lu"><span class="hd" style="grid-column:1">CR</span><span class="hd" style="grid-column:2;text-transform:none">${chip==='X3'?'3x 2x':'2x'}</span><span class="hd" style="grid-column:3/5">DR</span></div><div class="tl-num"><small>${pts}</small></div><div class="tl-num"><small>${cost}</small></div></div>`;}
-function teamRow(t,i,chip,start,byId,dec,b,cls){
-  b=b||boosts(t.d,chip);
-  const codes=lineup(t,b,start);
+const PIN_SVG='<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 2l7 7-2.5.8-4.3 4.3.8 5.4-2.1 2.1-4.3-4.3L4 23l-1-1 5.7-5.6-4.3-4.3 2.1-2.1 5.4.8L16.2 6.5z"/></svg>';
+const teamKey=t=>t.c.concat(t.d).map(a=>a.id).sort().join(',');
+function pinsGet(k){try{return JSON.parse(localStorage.getItem(k)||'[]')||[];}catch(e){return [];}}
+function pinsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+// x: chip, cap, start, byId, dec, b (fixed boosts), cls, pin (is pinned)
+function teamRow(t,i,x){
+  const b=x.b||boosts(t.d,x.chip,x.cap);
   let io='';
-  if(start){const ids=new Set(t.c.concat(t.d).map(a=>a.id));
-    const inn=t.c.concat(t.d).filter(a=>!start.has(a.id)).map(a=>a.c);
-    const out=[...start].filter(id=>!ids.has(id)).map(id=>byId[id]?byId[id].c:'?');
+  if(x.start){const ids=new Set(t.c.concat(t.d).map(a=>a.id));
+    const inn=t.c.concat(t.d).filter(a=>!x.start.has(a.id)).map(a=>a.c);
+    const out=[...x.start].filter(id=>!ids.has(id)).map(id=>x.byId[id]?x.byId[id].c:'?');
     io=`<div class="tl-io">${inn.length?`In ${inn.join(' ')} · Out ${out.join(' ')}`:'No transfers'}${t.pen?` · <span class="tl-dn">−${t.pen} pts</span>`:''}</div>`;}
-  const pts=dec?t.pts.toFixed(1):Math.round(t.pts);
-  return `<div class="tl-team${cls?' '+cls:''}"><div class="tl-rank">${typeof i==='number'?i+1:i}</div><div>${codes}${io}</div>
-    <div class="tl-num">${pts}<small>pts</small></div><div class="tl-num">${fmt(t.cost)}<small>${sgn(Math.round(t.dp*10)/10)}</small></div></div>`;}
+  const pts=x.dec?t.pts.toFixed(1):Math.round(t.pts);
+  const dp=Math.round(t.dp*10)/10, dc=dp>0?'up':dp<0?'dn':'';
+  const pin=x.cls==='now'?'':`<button class="tl-pin${x.pin?' on':''}" data-pin="${teamKey(t)}" aria-label="${x.pin?'Unpin':'Pin'} this team">${PIN_SVG}</button>`;
+  return `<div class="tl-team${x.cls?' '+x.cls:''}"><div class="tl-rank">${typeof i==='number'?i+1:i}${pin}</div><div>${lineup(t,b,x.start,x.dec)}${io}</div>
+    <div class="tl-num"><b>${pts}</b><small>pts</small></div><div class="tl-num">${fmt(t.cost)}<small class="${dc}">${sgn(dp)}</small></div></div>`;}
+// The results table, shared by the calculator and Hindsight. Header: tap CR, 2x
+// or DR to filter, tap xPts / $ / xΔ$ to sort (each cycles through both
+// directions and back to the ranking). Pinned teams (per round, this device)
+// stay at the top, worked out again for the current settings.
+function teamTable(el,x){
+  const st=x.st, o=x.o, all=Object.fromEntries(x.assets.map(a=>[a.id,a]));
+  const pins=pinsGet(x.pinKey), pinSet=new Set(pins);
+  const ctx={chip:o.chip,cap:o.cap,start:x.start,byId:x.byId,dec:x.dec};
+  const s=st.sort||'', dir=st.dir||-1;
+  const SK={pts:t=>t.pts,cost:t=>t.cost,dp:t=>t.dp};
+  const rows=x.top.map((t,i)=>({t,i}));
+  if(s)rows.sort((a,b)=>dir*(SK[s](a.t)-SK[s](b.t))||a.i-b.i);
+  const hs=(k,l)=>`<span class="hs${s===k?' on':''}" data-sort="${k}">${l}${s===k?(dir>0?' ↑':' ↓'):''}</span>`;
+  const act=k=>k==='X'?!!o.cap:[...o.inc,...o.exc].some(id=>all[id]&&all[id].t===k);
+  const hf=(k,l,col)=>`<span class="hd hf${st.panel===k?' on':''}${act(k)?' act':''}" style="grid-column:${col};text-transform:${k==='X'?'none':'uppercase'}" data-flt="${k}">${l} ▾</span>`;
+  let h=`<div class="tl-team tl-hd"><div></div><div class="tl-lu">${hf('C','CR','1')}${hf('X',o.chip==='X3'?'3x':'2x','2')}${hf('D','DR','3/5')}</div>`+
+    `<div class="tl-num">${hs('pts',x.ptsLbl)}</div><div class="tl-num">${hs('cost','$')}${hs('dp',x.dLbl)}</div></div>`;
+  if(st.panel==='X'){const ds=x.assets.filter(a=>a.t==='D'&&!o.exc.has(a.id)).sort((a,b)=>b.x-a.x);
+    h+=`<div class="tl-fp"><div class="tl-note" style="margin:0 0 6px">Who gets the ${o.chip==='X3'?'3x':'2x'}? Best lets the calculator choose.</div><div class="tl-assets" style="margin:0"><button data-cap="" class="${o.cap?'':'inc'}">Best</button>${ds.map(a=>`<button data-cap="${a.id}" class="${o.cap===a.id?'inc':''}" style="${tc(a)}">${a.c}</button>`).join('')}</div></div>`;}
+  else if(st.panel){const as=x.assets.filter(a=>a.t===st.panel).sort((a,b)=>b.x-a.x);
+    h+=`<div class="tl-fp"><div class="tl-note" style="margin:0 0 6px">Tap to require, again to leave out, again to reset.</div><div class="tl-assets" style="margin:0">${as.map(a=>`<button data-fa="${a.id}" class="${o.inc.has(a.id)?'inc':o.exc.has(a.id)?'exc':''}" style="${tc(a)}">${a.c}</button>`).join('')}</div></div>`;}
+  if(x.cur)h+=`<div class="tl-sec">${x.curLabel}</div>`+teamRow(x.cur,'',{...ctx,start:null,cap:null,b:x.curB,cls:'now'});
+  const pinned=pins.map(k=>{const ids=k.split(','), set=ids.map(id=>all[id]);
+    if(set.some(a=>!a))return null;
+    return bestTeams(set,{...o,cap:o.cap&&ids.includes(o.cap)?o.cap:null,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0})[0];}).filter(Boolean);
+  if(pinned.length)h+=`<div class="tl-sec">Pinned</div>`+pinned.map(t=>teamRow(t,'',{...ctx,pin:true,cap:o.cap&&t.d.some(a=>a.id===o.cap)?o.cap:null})).join('');
+  h+=`<div class="tl-sec">Best teams${s?` · sorted by ${{pts:x.ptsLbl,cost:'cost',dp:x.dLbl}[s]}`:''}</div>`;
+  h+=rows.length?rows.map(r=>teamRow(r.t,r.i,{...ctx,pin:pinSet.has(teamKey(r.t))})).join('')
+    :'<div class="tl-note">No team fits that budget and those filters.</div>';
+  el.innerHTML=h;
+  el.onclick=e=>{const g=e.target.closest('[data-sort],[data-flt],[data-pin],[data-fa],[data-cap]');if(!g)return;
+    const d=g.dataset;
+    if(d.sort){const k=d.sort, first=k==='cost'?1:-1;
+      if(st.sort!==k){st.sort=k;st.dir=first;}else if(st.dir===first)st.dir=-first;else st.sort='';}
+    else if(d.flt)st.panel=st.panel===d.flt?null:d.flt;
+    else if(d.pin){const p=pinsGet(x.pinKey), i=p.indexOf(d.pin);if(i>=0)p.splice(i,1);else p.unshift(d.pin);pinsSet(x.pinKey,p);}
+    else if(d.fa){const id=d.fa;if(o.inc.has(id)){o.inc.delete(id);o.exc.add(id);}else if(o.exc.has(id))o.exc.delete(id);else o.inc.add(id);}
+    else if('cap' in d)st.cap=d.cap||null;
+    x.rerun();};}
 
 // ── Team calculator ────────────────────────────────────────────────────────
 const C=T.calc, PA=(T.predictor||{}).assets||[];
 const CA=PA.map(a=>({id:a.id,c:a.c,t:a.t,k:a.k,p:a.p,x:a.xp,n:a.xn,d:a.xd}));
 const CById=Object.fromEntries(CA.map(a=>[a.id,a]));
-const cst={inc:new Set(),exc:new Set(),n:10};
+const cst={inc:new Set(),exc:new Set(),n:10,cap:null,panel:null,sort:'',dir:-1};
 const cM=$('tcMgr'), cF=$('tcFree'), cB=$('tcBudget'), cC=$('tcChip'), cW=$('tcW');
 const CHIP={X3:'Extra DRS',WC:'Wildcard',LL:'Limitless',NN:'No Negative',AP:'Auto Pilot'};
 const CHIP_IDS={X3:['X3','DRS','EXTRA DRS','EXTRADRS'],WC:['WC','WILDCARD'],LL:['LL','LIMITLESS'],NN:['NN','NO NEGATIVE','NONEGATIVE'],AP:['AP','AUTO PILOT','AUTOPILOT']};
@@ -608,20 +674,20 @@ function runC(){
   if(!C||!CA.length){$('tcTeams').innerHTML='<div class="tl-note">No prices yet.</div>';return;}
   const m=cMgr(); const start=m?new Set(m.picks):null;
   const o={budget:parseFloat(cB.value)||100,chip:cC.value,inc:cst.inc,exc:cst.exc,n:cst.n,
-    w:+cW.value,start,free:+cF.value,cost:m?m.cost:10};
+    w:+cW.value,start,free:+cF.value,cost:m?m.cost:10,cap:cst.cap};
   const top=bestTeams(CA,o);
-  let curRow='';
+  let cur=null;
   if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);
     const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
-    if(D.length===5&&Cn.length===2){const k=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0})[0];
-      if(k)curRow=`<div class="tl-sec">${m.m}'s team now</div>`+teamRow({...k,cost:mine.reduce((a,b)=>a+b.p,0)},'',o.chip,null,null,true,null,'now')+'<div class="tl-sec">Best teams</div>';}}
-  $('tcTeams').innerHTML=top.length?teamHead(o.chip,'xPTS','COST / xΔ$')+curRow+top.map((t,i)=>teamRow(t,i,o.chip,start,CById,true)).join('')
-    :'<div class="tl-note">No team fits that budget and those filters.</div>';
+    if(D.length===5&&Cn.length===2){const k=bestTeams(mine,{...o,cap:null,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0})[0];
+      if(k)cur={...k,cost:mine.reduce((a,b)=>a+b.p,0)};}}
+  teamTable($('tcTeams'),{top,o,st:cst,assets:CA,start,byId:CById,dec:true,ptsLbl:'xPts',dLbl:'xΔ$',
+    pinKey:'uc-pin-c-'+C.r,cur,curLabel:m?`${m.m}'s team now`:'',rerun:()=>{cAssets();runC();}});
   $('tcMore').style.display=top.length>=cst.n&&cst.n<50?'':'none';
   if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);const col=COL[m.m]||'#ccc';
     const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
     let now=null,nowD=null;
-    if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});
+    if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,cap:null,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});
       if(keep[0]){now=keep[0].pts;nowD=keep[0].dp;}}
     const sd=v=>`${v>=0?'+':'−'}$${Math.abs(v).toFixed(1)}M`;
     $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team for ${C.name}: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
@@ -653,7 +719,7 @@ $('tcMore').onclick=()=>{cst.n=Math.min(50,cst.n+10);runC();};
 
 // ── Hindsight ──────────────────────────────────────────────────────────────
 const H=T.hindsight||[];
-const st={inc:new Set(),exc:new Set(),n:10};
+const st={inc:new Set(),exc:new Set(),n:10,cap:null,panel:null,sort:'',dir:-1};
 const rSel=$('tlRound'), mSel=$('tlMgr'), bIn=$('tlBudget'), cSel=$('tlChip');
 H.slice().reverse().forEach(h=>rSel.add(new Option(`R${h.r} ${h.name}${h.final?'':' (live)'}`,h.r)));
 function round(){return H.find(h=>h.r==rSel.value);}
@@ -671,18 +737,17 @@ function assetsBar(){const h=round();if(!h){$('tlAssets').innerHTML='';return;}
     assetsBar();runH();});}
 function runH(){
   const h=round(); if(!h){$('tlTeams').innerHTML='<div class="tl-note">No rounds yet.</div>';return;}
-  const o={budget:parseFloat(bIn.value)||100,chip:cSel.value,inc:st.inc,exc:st.exc,n:st.n};
+  const o={budget:parseFloat(bIn.value)||100,chip:cSel.value,inc:st.inc,exc:st.exc,n:st.n,cap:st.cap};
   const top=bestTeams(h.assets,o);
   const m=mgr();
-  let curRow='';
+  let cur=null,curB=null;
   if(m){const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
     const mine=m.picks.map(id=>byId[id]).filter(Boolean);
     const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
-    if(D.length&&Cn.length){const b={};if(m.cap)b[m.cap]='x2';if(m.mega)b[m.mega]='x3';
-      curRow=`<div class="tl-sec">${m.m}'s team</div>`+teamRow({c:Cn,d:D,pts:m.pts,cost:mine.reduce((a,x)=>a+x.p,0),
-        dp:mine.reduce((a,x)=>a+(x.d||0),0)},'',o.chip,null,null,false,b,'now')+'<div class="tl-sec">Best teams</div>';}}
-  $('tlTeams').innerHTML=top.length?teamHead(o.chip,'POINTS','COST / Δ$')+curRow+top.map((t,i)=>teamRow(t,i,o.chip)).join('')
-    :'<div class="tl-note">No team fits that budget and those filters.</div>';
+    if(D.length&&Cn.length){curB={};if(m.cap)curB[m.cap]='x2';if(m.mega)curB[m.mega]='x3';
+      cur={c:Cn,d:D,pts:m.pts,cost:mine.reduce((a,x)=>a+x.p,0),dp:mine.reduce((a,x)=>a+(x.d||0),0)};}}
+  teamTable($('tlTeams'),{top,o,st,assets:h.assets,dec:false,ptsLbl:'Pts',dLbl:'Δ$',
+    pinKey:'uc-pin-h-'+h.r,cur,curB,curLabel:m?`${m.m}'s team`:'',rerun:()=>{assetsBar();runH();}});
   $('tlMore').style.display=top.length>=st.n&&st.n<50?'':'none';
   if(m&&top.length){const best=top[0].pts;const col=COL[m.m]||'#ccc';
     const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
@@ -691,7 +756,7 @@ function runH(){
     $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).`;
   } else $('tlCmp').innerHTML='';
 }
-rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;fillMgr();setBudget();assetsBar();runH();};
+rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;st.cap=null;st.panel=null;fillMgr();setBudget();assetsBar();runH();};
 mSel.onchange=()=>{setBudget();runH();};
 bIn.oninput=runH; cSel.onchange=runH;
 $('tlMore').onclick=()=>{st.n=Math.min(50,st.n+10);runH();};
