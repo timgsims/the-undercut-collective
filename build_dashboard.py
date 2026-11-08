@@ -1349,9 +1349,9 @@ def panel_race_breakdown(data):
     medal_styles = ["background:#FFD700;color:#7a5800",
                     "background:#C0C0C0;color:#4a4a4a",
                     "background:#CD7F32;color:#5a2d00"]
-    slot_styles  = ["background:#2a2200;border:0.5px solid #FFD700",
-                    "background:#222;border:0.5px solid #C0C0C0",
-                    "background:#221a12;border:0.5px solid #CD7F32"]
+    slot_styles  = ["background:#2a2200;border:1px solid #FFD700",
+                    "background:#222;border:1px solid #C0C0C0",
+                    "background:#221a12;border:1px solid #CD7F32"]
     ordinals     = ["1st","2nd","3rd","4th","5th","6th","7th","8th","9th"]
 
     by_name = {m["name"]: m for m in M}
