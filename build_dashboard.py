@@ -252,6 +252,8 @@ def read_database(db_path, season=None):
             # Stays the same through a live weekend, changes when the next round is final.
             "rank_move":        rank_move(conn, season, mid),
             "rank_final":       rank_final(conn, season, mid),
+            "nz_move":          rank_move(conn, season, mid, "nz_rank"),
+            "nz_final":         rank_final(conn, season, mid, "nz_rank"),
             "transfers":        transfers,
             "subs_allowance":   subs_allowance,
             "sub_cost":         sub_cost,
@@ -1026,21 +1028,21 @@ def podium_table_html(pods, M):
 </div>"""
 
 
-def rank_move(conn, season, mid):
+def _rank_rows(conn, season, mid, col):
     try:
-        r = conn.execute("SELECT overall_rank FROM rank_history WHERE season=? AND manager_id=? "
-                         "ORDER BY round DESC LIMIT 2", (season, mid)).fetchall()
+        return [r[0] for r in conn.execute(f"SELECT {col} FROM rank_history WHERE season=? AND manager_id=? "
+                                           "ORDER BY round DESC LIMIT 2", (season, mid))]
     except sqlite3.OperationalError:
-        return None
-    return r[1][0] - r[0][0] if len(r) == 2 else None
+        return []
 
 
-def rank_final(conn, season, mid):
-    try:
-        r = conn.execute("SELECT overall_rank FROM rank_history WHERE season=? AND manager_id=? "
-                         "ORDER BY round DESC LIMIT 1", (season, mid)).fetchone()
-    except sqlite3.OperationalError:
-        return None
+def rank_move(conn, season, mid, col="overall_rank"):
+    r = _rank_rows(conn, season, mid, col)
+    return r[1] - r[0] if len(r) == 2 and None not in r else None
+
+
+def rank_final(conn, season, mid, col="overall_rank"):
+    r = _rank_rows(conn, season, mid, col)
     return r[0] if r else None
 
 
@@ -1122,7 +1124,9 @@ def _global_standing_section(data):
         # NZ rank comes from F1's public top-500-NZ snapshot feed, not a
         # per-round field — a manager ranked below 500th nationally has no
         # row at all, hence "—" here rather than a fabricated number.
-        nz_html = rank_pct_html(m.get("nz_rank"), TOTAL_NZ_PLAYERS)
+        nz_now, nz_fin = m.get("nz_rank"), m.get("nz_final")
+        nz_html = (rank_pct_html(nz_fin, TOTAL_NZ_PLAYERS, m.get("nz_move"), nz_now if nz_now != nz_fin else None)
+                   if nz_fin else rank_pct_html(nz_now, TOTAL_NZ_PLAYERS))
         cur_ov_html = rank_pct_html(r["cur_ov"], TOTAL_GLOBAL_PLAYERS, r["move"], r["live"])
         # Split into two sub-columns (rank right-aligned, race name left-
         # aligned) so the gap between them — not the text block as a whole —
@@ -1145,7 +1149,7 @@ def _global_standing_section(data):
 </div>"""
 
     return f"""<div class="section-label">Global standing</div>
-<div class="hint" style="margin-bottom:.5rem">How the league stacks up against every F1 Fantasy player worldwide. NZ rank only appears for players inside F1 Fantasy's public New Zealand top 500 — a "—" means ranked lower than that, not unranked. Overall rank is as of the last finished round, and the green and red arrows show how many places it moved in that round. During a race weekend the live rank shows underneath.</div>
+<div class="hint" style="margin-bottom:.5rem">How the league stacks up against every F1 Fantasy player worldwide. NZ rank only appears for players inside F1 Fantasy's public New Zealand top 500 — a "—" means ranked lower than that, not unranked. Both ranks are as of the last finished round, and the green and red arrows show how many places they moved in that round. During a race weekend the live rank shows underneath.</div>
 <div class="card" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
   <div style="min-width:520px">
   <div style="display:grid;grid-template-columns:{grid_cols};gap:10px;padding:4px 0 8px;align-items:end">

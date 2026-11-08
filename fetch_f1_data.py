@@ -366,6 +366,9 @@ def init_db(conn):
     conn.execute("CREATE TABLE IF NOT EXISTS rank_history (season INTEGER, round INTEGER, "
                  "manager_id TEXT, overall_rank INTEGER, recorded_at TEXT, "
                  "PRIMARY KEY (season, round, manager_id))")
+    # NZ rank too (null when outside F1's public NZ top 500). Added 2026-11-08.
+    if "nz_rank" not in {r[1] for r in conn.execute("PRAGMA table_info(rank_history)")}:
+        conn.execute("ALTER TABLE rank_history ADD COLUMN nz_rank INTEGER")
     # The Extra DRS chip boosts a SECOND, separate driver to 3x (API field
     # mgcapplayerid) on top of the normal 2x capplayerid pick — they are never
     # the same driver. Added 2026-09-09; CREATE TABLE IF NOT EXISTS will not
@@ -415,10 +418,14 @@ def record_ranks(conn):
             continue
         row = conn.execute("SELECT overall_rank FROM race_results WHERE season=? AND round=? AND manager_id=?",
                            (SEASON, last_final, mid)).fetchone()
+        nz = conn.execute("SELECT nz_rank FROM nz_leaderboard WHERE season=? AND manager_id=?",
+                          (SEASON, mid)).fetchone()
         if row and row[0] is not None:
-            conn.execute("INSERT INTO rank_history VALUES (?,?,?,?,?) ON CONFLICT(season, round, manager_id) "
-                         "DO UPDATE SET overall_rank=excluded.overall_rank, recorded_at=excluded.recorded_at",
-                         (SEASON, last_final, mid, row[0], now))
+            conn.execute("INSERT INTO rank_history (season, round, manager_id, overall_rank, recorded_at, nz_rank) "
+                         "VALUES (?,?,?,?,?,?) ON CONFLICT(season, round, manager_id) "
+                         "DO UPDATE SET overall_rank=excluded.overall_rank, recorded_at=excluded.recorded_at, "
+                         "nz_rank=excluded.nz_rank",
+                         (SEASON, last_final, mid, row[0], now, nz[0] if nz else None))
     conn.commit()
 
 
