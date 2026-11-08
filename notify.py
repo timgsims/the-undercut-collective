@@ -216,7 +216,7 @@ def due_messages(lg, locks, now):
             who = names.get(p["code"], p["code"]).split(". ", 1)[-1]   # "M. Verstappen" -> "Verstappen"
             will = "to" if p["status"] == "confirmed" else "expected to"
             what = {"back": "start from the back", "pitlane": "start from the pit lane"}.get(
-                p["kind"], f"get a {penalties.describe(p)}")
+                p["kind"], f"get a {penalties.describe(p).lower()}")
             why = p["reason"].strip()
             if why and why[-1] not in ".!?":
                 why += "."
