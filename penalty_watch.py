@@ -112,6 +112,8 @@ Rules:
   formula1.com, the FIA, Autosport, The Race, Motorsport.com, ESPN, PlanetF1 or similar.
 - "expected": a team or reputable outlet says it will happen or is likely. Leave out
   pure speculation and opinion.
+- places: the number of places only if a source gives it; otherwise null. Never assume
+  a standard size.
 - One entry per driver, for this race only. Combine several drops into one total; if
   any part sends them to the back, use "back".
 - source_url must be a URL your search actually returned. Never build or guess one.
@@ -189,8 +191,8 @@ def clean(items, codes):
             places = int(i["places"]) if kind == "places" and i.get("places") is not None else None
         except (TypeError, ValueError):
             places = None
-        if kind == "places" and not places:
-            continue
+        if kind == "places" and not places and status == "confirmed":
+            continue   # a confirmed drop needs its size; an expected one may not have one yet
         url = str(i.get("source_url") or "").strip()
         out.append({"code": code, "kind": kind, "places": places, "status": status,
                     "reason": str(i.get("reason") or "").strip()[:240],
