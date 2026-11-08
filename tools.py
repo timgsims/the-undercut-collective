@@ -551,8 +551,9 @@ function runC(){
       if(keep[0]){now=keep[0].pts;nowD=keep[0].dp;}}
     const sd=v=>`${v>=0?'+':'−'}$${Math.abs(v).toFixed(1)}M`;
     const b=D.length?boosts(D,o.chip):{};
-    $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team now: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
+    $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team for ${C.name}: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
       `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).sort(byPts).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${V(Math.round(a.x))}</span>`).join('')}</div>`+
+      `<div style="margin-top:6px;color:#999">Ringed: the calculator's ${o.chip==='X3'?'3x and 2x picks':'2x pick'} for ${C.name}, the driver${o.chip==='X3'?'s':''} it expects to score most. Not necessarily yours: set your own in the F1 app.</div>`+
       (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts and ${sd(top[0].dp-nowD)} price change on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
