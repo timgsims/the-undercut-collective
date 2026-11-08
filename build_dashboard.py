@@ -1624,6 +1624,7 @@ def panel_h2h(data):
             "chipBg":      m["chip_bg"],
             "chipTc":      m["chip_tc"],
             "chipByRace":  m["chip_by_race"],   # {race_name: chip_name}
+            "budgets":     m["budgets"],        # [pre-season 100, after each finished race...]
         }
 
     names_js = js(list(manager_data_js.keys()))
@@ -1635,6 +1636,8 @@ def panel_h2h(data):
                              "No Negative":"No negative pts","Extra DRS":"3x pts booster"}[c]}
                    for c in CHIP_ORDER])
     race_names_js = js([r["name"] for r in RD])
+    b_labels = ["Pre-season"] + data["budget_race_names"]
+    n_budget = max((len(m["budgets"]) for m in M), default=1)
 
     return f"""<div class="subtitle">Head-to-Head Comparison</div>
 <div style="display:flex;gap:12px;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap">
@@ -1651,6 +1654,8 @@ def panel_h2h(data):
 <div class="card" id="race-rows"></div>
 <div class="section-label">Points progression</div>
 {xchart_html("h2hChart", len(RD) + 1, 260)}
+<div class="section-label">Budget progression</div>
+{xchart_html("h2hBudgetChart", n_budget, 260)}
 <script>
 (function(){{
 const chips={chips_js};
@@ -1658,7 +1663,8 @@ const chipStyles={js({c: {"bg": CHIP_STYLES[c]["bg"], "tc": CHIP_STYLES[c]["tc"]
 const mgrs={data_js};
 const raceNames={race_names_js};
 const names={names_js};
-let chart=null;
+let chart=null, bChart=null;
+const bLabels={js(b_labels)};
 const selA=document.getElementById('selA'),selB=document.getElementById('selB');
 function populateSelect(sel,exclude,cur){{
   const prev=cur||sel.value;sel.innerHTML='';
@@ -1725,6 +1731,17 @@ function render(){{
   ]}},options:{{responsive:true,maintainAspectRatio:false,
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}} pts`}}}}}},
     scales:{{x:{{{XCHART_X_TICKS},grid:{{color:'rgba(255,255,255,0.06)'}}}},y:{{ticks:{{color:'#888'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
+  }});
+  // Team value after each finished race (same figures as the Budget Tracker).
+  const bN=Math.max(A.budgets.length,B.budgets.length), bv=[...A.budgets,...B.budgets];
+  if(bChart)bChart.destroy();
+  bChart=new Chart(document.getElementById('h2hBudgetChart'),{{type:'line',data:{{labels:bLabels.slice(0,bN),datasets:[
+    {{label:nA,data:A.budgets,borderColor:A.color,backgroundColor:A.color,borderWidth:2.5,pointBackgroundColor:A.color,pointRadius:4,fill:false,tension:0.2}},
+    {{label:nB,data:B.budgets,borderColor:B.color,backgroundColor:B.color,borderWidth:2.5,pointBackgroundColor:B.color,pointRadius:4,fill:false,tension:0.2}}
+  ]}},options:{{responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y.toFixed(1)}}m`}}}}}},
+    scales:{{x:{{{XCHART_X_TICKS},grid:{{color:'rgba(255,255,255,0.06)'}}}},
+             y:{{min:Math.floor(Math.min(98,...bv)-1),max:Math.ceil(Math.max(102,...bv)+1),ticks:{{color:'#888',callback:v=>v.toFixed(0)+'m'}},grid:{{color:'rgba(255,255,255,0.06)'}}}}}}}}
   }});
 }}
 render();
