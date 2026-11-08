@@ -247,6 +247,11 @@ def read_database(db_path, season=None):
             "scores": scores,
             "provisional":      provisional,
             "global_ranks":     global_ranks,
+            # Places gained (+) or lost (-) in the overall rank between the ends
+            # of the last two finished rounds (rank_history, fetch_f1_data.py).
+            # Stays the same through a live weekend, changes when the next round is final.
+            "rank_move":        rank_move(conn, season, mid),
+            "rank_final":       rank_final(conn, season, mid),
             "transfers":        transfers,
             "subs_allowance":   subs_allowance,
             "sub_cost":         sub_cost,
@@ -628,7 +633,7 @@ def weekend_teams_html(spoiler):
 (function(){{
 const teams={js(teams)};
 const sel=document.getElementById('wkTeamSel');
-let saved=null;try{{saved=localStorage.getItem('uc-weekend-manager');}}catch(e){{}}
+const saved=ucMe();
 teams.forEach(t=>{{const o=document.createElement('option');o.value=t.name;
   o.textContent=t.name+' \u2014 '+t.teamName;if(t.name===saved)o.selected=true;sel.appendChild(o);}});
 function card(t,p){{
@@ -641,7 +646,7 @@ function card(t,p){{
     <div style="font-size:11px;color:#888;margin-top:3px">${{val}}</div></div>`;
 }}
 window.ucWeekendTeam=function(name){{
-  try{{localStorage.setItem('uc-weekend-manager',name);}}catch(e){{}}
+  ucSetMe(name);
   const t=teams.find(x=>x.name===name);if(!t)return;
   const byVal=l=>[...l].sort((a,b)=>(b.value||0)-(a.value||0));
   const chip=t.chip?`<span class="chip-pill" style="background:${{t.chip.bg}};color:${{t.chip.tc}};margin-left:auto">${{t.chip.label}}</span>`:'';
@@ -1021,6 +1026,24 @@ def podium_table_html(pods, M):
 </div>"""
 
 
+def rank_move(conn, season, mid):
+    try:
+        r = conn.execute("SELECT overall_rank FROM rank_history WHERE season=? AND manager_id=? "
+                         "ORDER BY round DESC LIMIT 2", (season, mid)).fetchall()
+    except sqlite3.OperationalError:
+        return None
+    return r[1][0] - r[0][0] if len(r) == 2 else None
+
+
+def rank_final(conn, season, mid):
+    try:
+        r = conn.execute("SELECT overall_rank FROM rank_history WHERE season=? AND manager_id=? "
+                         "ORDER BY round DESC LIMIT 1", (season, mid)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return r[0] if r else None
+
+
 def _global_standing_section(data):
     """Current global-rank standing table — how the league stacks up against
     every F1 Fantasy player worldwide. Lives at the bottom of the Leaderboard
@@ -1045,7 +1068,9 @@ def _global_standing_section(data):
         cur_ov = next((v["ovrank"] for v in reversed(list(gr.values())) if v.get("ovrank") is not None), None)
         gd_entries = [(rname, v["gdrank"]) for rname, v in gr.items() if v.get("gdrank") is not None]
         best_gd = min(gd_entries, key=lambda x: x[1]) if gd_entries else None
-        rows.append({"m": m, "cur_ov": cur_ov, "best_gd": best_gd})
+        live = cur_ov if m.get("rank_final") and cur_ov != m["rank_final"] else None
+        rows.append({"m": m, "cur_ov": m.get("rank_final") or cur_ov, "live": live,
+                     "best_gd": best_gd, "move": m.get("rank_move")})
 
     rows.sort(key=lambda r: (r["cur_ov"] if r["cur_ov"] is not None else 10**9))
 
@@ -1059,7 +1084,19 @@ def _global_standing_section(data):
             return f"{n/1_000:g}k+"
         return f"{n}+"
 
-    def rank_pct_html(rank, total):
+    def move_html(move):
+        """Green up / red down arrow with the places moved, under the rank."""
+        if not move:
+            return ""
+        up = move > 0
+        return (f'<div style="font-size:11px;font-weight:600;color:{"#88dd44" if up else "#ff7a7a"};'
+                f'font-variant-numeric:tabular-nums">{"▲" if up else "▼"} {abs(move):,}</div>')
+
+    def live_html(live):
+        return (f'<div style="font-size:10px;color:#666;font-weight:400">live {fmt_rank(live)}</div>'
+                if live else "")
+
+    def rank_pct_html(rank, total, move=None, live=None):
         """Rank right-aligned with its approximate percentile as small grey
         text alongside it — same two-sub-column pattern as the Best Single
         Race cell, so the gap (not the text block) sits on the column center."""
@@ -1069,7 +1106,7 @@ def _global_standing_section(data):
         pct_html = f'<div style="text-align:left;color:#555;font-size:11px;align-self:center">(top {pct}%)</div>' if pct is not None else ""
         return (
             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
-            f'<div style="text-align:right">{fmt_rank(rank)}</div>'
+            f'<div style="text-align:right">{fmt_rank(rank)}{move_html(move)}{live_html(live)}</div>'
             f'{pct_html}'
             f'</div>'
         )
@@ -1086,7 +1123,7 @@ def _global_standing_section(data):
         # per-round field — a manager ranked below 500th nationally has no
         # row at all, hence "—" here rather than a fabricated number.
         nz_html = rank_pct_html(m.get("nz_rank"), TOTAL_NZ_PLAYERS)
-        cur_ov_html = rank_pct_html(r["cur_ov"], TOTAL_GLOBAL_PLAYERS)
+        cur_ov_html = rank_pct_html(r["cur_ov"], TOTAL_GLOBAL_PLAYERS, r["move"], r["live"])
         # Split into two sub-columns (rank right-aligned, race name left-
         # aligned) so the gap between them — not the text block as a whole —
         # sits on the column's true center line.
@@ -1108,7 +1145,7 @@ def _global_standing_section(data):
 </div>"""
 
     return f"""<div class="section-label">Global standing</div>
-<div class="hint" style="margin-bottom:.5rem">How the league stacks up against every F1 Fantasy player worldwide. NZ rank only appears for players inside F1 Fantasy's public New Zealand top 500 — a "—" means ranked lower than that, not unranked.</div>
+<div class="hint" style="margin-bottom:.5rem">How the league stacks up against every F1 Fantasy player worldwide. NZ rank only appears for players inside F1 Fantasy's public New Zealand top 500 — a "—" means ranked lower than that, not unranked. Overall rank is as of the last finished round, and the green and red arrows show how many places it moved in that round. During a race weekend the live rank shows underneath.</div>
 <div class="card" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
   <div style="min-width:520px">
   <div style="display:grid;grid-template-columns:{grid_cols};gap:10px;padding:4px 0 8px;align-items:end">
@@ -1624,10 +1661,11 @@ function populateSelect(sel,exclude,cur){{
   names.filter(n=>n!==exclude).forEach(n=>{{const o=document.createElement('option');o.value=n;o.textContent=n;if(n===prev)o.selected=true;sel.appendChild(o);}});
   if(!sel.value)sel.value=sel.options[0].value;
 }}
-function syncSelects(changed){{if(changed==='A')populateSelect(selB,selA.value,selB.value);else populateSelect(selA,selB.value,selA.value);render();}}
+function syncSelects(changed){{if(changed==='A'){{ucSetMe(selA.value);populateSelect(selB,selA.value,selB.value);}}else populateSelect(selA,selB.value,selA.value);render();}}
 window.ucH2HSync=syncSelects;
-populateSelect(selA,null,names[0]);
-if(names.length>1)populateSelect(selB,names[0],names[1]);
+const a0=names.includes(ucMe())?ucMe():names[0];
+populateSelect(selA,null,a0);
+if(names.length>1)populateSelect(selB,a0,a0===names[0]?names[1]:names[0]);
 else populateSelect(selB,null,names[0]);
 function tickSvg(used,color){{
   if(used)return`<div class="tick" style="background:${{color}}22"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="${{color}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`;
@@ -2767,7 +2805,7 @@ const tradeRaceSel=document.getElementById('tradeRaceSel');
 /* ── Lineup viewer ── */
 function showRace(rname){{
   const teams=teamsByRace[rname]||[];
-  const prev=teamSel.value||p1Manager;
+  const prev=teamSel.value||ucMe()||p1Manager;
   teamSel.innerHTML='';
   teams.forEach(t=>{{
     const o=document.createElement('option');
@@ -3002,7 +3040,8 @@ document.getElementById('impactOverviewToggle').addEventListener('click',functio
   impactOverviewMetric=btn.dataset.metric;
   renderImpactOverview(impactOverviewMetric);
 }});
-impactManagerSel.addEventListener('change',function(){{renderImpactPerRace(this.value, impactPerRaceMetric);}});
+if([...impactManagerSel.options].some(o=>o.value===ucMe()))impactManagerSel.value=ucMe();
+impactManagerSel.addEventListener('change',function(){{ucSetMe(this.value);renderImpactPerRace(this.value, impactPerRaceMetric);}});
 
 /* ── DRS table ── */
 (function(){{
@@ -3064,7 +3103,7 @@ function renderPop(rname){{
 }}
 
 window.ucPicksRace=showRace;
-window.ucPicksTeam=showTeam;
+window.ucPicksTeam=function(r,n){{ucSetMe(n);showTeam(r,n);}};
 showRace(raceSel.value);
 renderTrades(tradeRaceSel.value);
 renderImpactOverview(impactOverviewMetric);
@@ -3449,6 +3488,9 @@ def build_html(data, spoiler=None):
 <head>
 <meta charset="UTF-8">
 {spoiler_head}
+<script>/* The manager this phone last picked in any manager menu (blank = none). */
+window.ucMe=function(){{try{{return localStorage.getItem('uc-weekend-manager')||'';}}catch(e){{return '';}}}};
+window.ucSetMe=function(n){{try{{if(n)localStorage.setItem('uc-weekend-manager',n);else localStorage.removeItem('uc-weekend-manager');}}catch(e){{}}}};</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Undercut Collective — F1 Fantasy {SEASON}</title>
 <link rel="manifest" href="manifest.json">

@@ -710,10 +710,10 @@ if(C){
   cSim();cHead();
   $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. ${SIMS.length?`xPts come from our race simulation: the weekend run 10,000 times from each car's qualifying and practice pace, how hard the track is to pass on, reliability and overtaking, scored with the F1 Fantasy rules. Pick a run under <b>Simulation</b>: <b>very early</b> is from past races only, before any practice; each later one adds that session from this weekend`:`xPts are each asset's average over its last 12 races, until the race simulation has run for this round`}${C.pricesFrom<C.r?`. Prices are today's (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}.`;
   cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
-  if(C.managers.some(m=>m.m==='Tim'))cM.value='Tim';
+  if(C.managers.some(m=>m.m===ucMe()))cM.value=ucMe();
 }
 cSetMgr();cAssets();runC();
-cM.onchange=()=>{cSetMgr();runC();};
+cM.onchange=()=>{ucSetMe(cM.value);cSetMgr();runC();};
 [cF,cC,cW].forEach(e=>e.onchange=runC); cB.oninput=runC;
 $('tcMore').onclick=()=>{cst.n=Math.min(50,cst.n+10);runC();};
 
@@ -723,9 +723,8 @@ const st={inc:new Set(),exc:new Set(),n:10,cap:null,panel:null,sort:'',dir:-1};
 const rSel=$('tlRound'), mSel=$('tlMgr'), bIn=$('tlBudget'), cSel=$('tlChip');
 H.slice().reverse().forEach(h=>rSel.add(new Option(`R${h.r} ${h.name}${h.final?'':' (live)'}`,h.r)));
 function round(){return H.find(h=>h.r==rSel.value);}
-// Starts on the same manager as the calculator (Tim), so their real team shows at the top.
-let hKeep=cM.value||'Tim';
-function fillMgr(){const h=round();const keep=mSel.value||hKeep;mSel.innerHTML='';
+// Starts on the manager this phone last picked anywhere (ucMe), so their real team shows at the top.
+function fillMgr(){const h=round();const keep=mSel.value||ucMe();mSel.innerHTML='';
   mSel.add(new Option('— none —',''));(h?h.teams:[]).forEach(t=>mSel.add(new Option(t.m,t.m)));
   if([...mSel.options].some(o=>o.value===keep))mSel.value=keep;}
 function mgr(){const h=round();return h&&h.teams.find(t=>t.m===mSel.value);}
@@ -759,7 +758,7 @@ function runH(){
   } else $('tlCmp').innerHTML='';
 }
 rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;st.cap=null;st.panel=null;fillMgr();setBudget();assetsBar();runH();};
-mSel.onchange=()=>{hKeep=mSel.value;setBudget();runH();};
+mSel.onchange=()=>{ucSetMe(mSel.value);setBudget();runH();};
 bIn.oninput=runH; cSel.onchange=runH;
 $('tlMore').onclick=()=>{st.n=Math.min(50,st.n+10);runH();};
 fillMgr();setBudget();assetsBar();runH();

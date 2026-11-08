@@ -359,6 +359,13 @@ def record_stage_snapshots(conn, pts_by_manager):
 
 def init_db(conn):
     conn.executescript(SCHEMA)
+    # Each manager's overall rank at the end of each finished round. F1 only
+    # gives today's rank (written onto every round's row, and it moves while a
+    # weekend is live), so the Leaderboard's up/down arrows need our own record.
+    # Added 2026-11-08; R18 and R19 filled in from the off-site backups.
+    conn.execute("CREATE TABLE IF NOT EXISTS rank_history (season INTEGER, round INTEGER, "
+                 "manager_id TEXT, overall_rank INTEGER, recorded_at TEXT, "
+                 "PRIMARY KEY (season, round, manager_id))")
     # The Extra DRS chip boosts a SECOND, separate driver to 3x (API field
     # mgcapplayerid) on top of the normal 2x capplayerid pick — they are never
     # the same driver. Added 2026-09-09; CREATE TABLE IF NOT EXISTS will not
@@ -392,6 +399,26 @@ def init_db(conn):
     # F1 Fantasy's team id (a constructor's own id), for team colours in Tools.
     if "team_id" not in plcols:
         conn.execute("ALTER TABLE players ADD COLUMN team_id TEXT")
+    conn.commit()
+
+
+def record_ranks(conn):
+    """Store each manager's overall rank against their latest finished round,
+    refreshed on every run until the next round starts (F1 can recalculate after
+    a round is final), then left alone so the next weekend's live moves don't
+    change it."""
+    now = datetime.now(timezone.utc).isoformat()
+    for mid, last_final, last_any in conn.execute(
+            "SELECT manager_id, MAX(CASE WHEN is_final=1 THEN round END), MAX(round) "
+            "FROM race_results WHERE season=? GROUP BY manager_id", (SEASON,)).fetchall():
+        if last_final is None or last_any != last_final:
+            continue
+        row = conn.execute("SELECT overall_rank FROM race_results WHERE season=? AND round=? AND manager_id=?",
+                           (SEASON, last_final, mid)).fetchone()
+        if row and row[0] is not None:
+            conn.execute("INSERT INTO rank_history VALUES (?,?,?,?,?) ON CONFLICT(season, round, manager_id) "
+                         "DO UPDATE SET overall_rank=excluded.overall_rank, recorded_at=excluded.recorded_at",
+                         (SEASON, last_final, mid, row[0], now))
     conn.commit()
 
 
@@ -1029,6 +1056,8 @@ def main():
         if fatal:
             break
 
+    if not fatal:
+        record_ranks(conn)
     conn.close()
 
     # Format: "FAILED at <iso> reason=<auth|network|other> detail=<first error>".
