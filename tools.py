@@ -384,7 +384,7 @@ TOOLS_HTML = r"""
 .tl-pen .why{font-size:11px;color:#888;line-height:1.4;margin-top:2px}
 .tl-pen .why a{color:#8ab4f8}
 .tl-pen .exp{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#d9a441;margin-left:6px}
-.tl-team{display:grid;grid-template-columns:16px 1fr 44px 40px;gap:4px;align-items:center;padding:8px 0;border-bottom:0.5px solid #2a2a2a}
+.tl-team{display:grid;grid-template-columns:16px 1fr 46px 42px;gap:4px;align-items:center;padding:8px 0;border-bottom:0.5px solid #2a2a2a}
 .tl-rank{font-size:11px;color:#666}
 .tl-codes{display:flex;flex-wrap:wrap;gap:3px}
 .tl-code{display:inline-block;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;padding:2px 5px;border-radius:5px;background:#252525;color:#ddd;white-space:nowrap}
@@ -418,6 +418,17 @@ TOOLS_HTML = r"""
 .tl-head .nm{font-size:20px;font-weight:700;color:#f2f2f0;line-height:1.1}
 .tl-head small{display:block;font-size:11px;font-weight:400;color:#888;margin-top:2px}
 .tl-io{flex-basis:100%;font-size:10px;color:#888;margin-top:2px}
+.tl-team .tl-io{margin-top:5px}
+.tl-lu{display:grid;grid-template-columns:repeat(4,minmax(0,46px));grid-auto-rows:auto;gap:4px}
+.tl-lu .hd{font-size:10px;color:#777;text-transform:uppercase;letter-spacing:.04em;text-align:center;grid-row:1}
+.tl-tile{border-radius:5px;overflow:hidden;background:#252525;text-align:center;font-variant-numeric:tabular-nums;min-width:0}
+.tl-tile .k{display:block;font-size:11px;font-weight:700;padding:3px 0 2px;letter-spacing:.02em}
+.tl-tile .v{display:block;font-size:10px;color:#bbb;padding:2px 0 3px}
+.tl-tile.x2{box-shadow:0 0 0 2px #88dd44}
+.tl-tile.x3{box-shadow:0 0 0 2px #ffaa44}
+.tl-tile.kept{opacity:.4}
+.tl-sec{font-size:11px;color:#888;padding:8px 0 2px;border-bottom:0.5px solid #2a2a2a}
+.tl-team.now{background:#202020;margin:0 -12px;padding:8px 12px}
 .tl-sub button{padding:8px 4px}
 </style>
 <div id="tlPen"></div>
@@ -541,17 +552,34 @@ function bestTeams(assets,o){
   return top;}
 function boosts(drivers,chip){const v=drivers.map(a=>[chip==='NN'?a.n:a.x,a.id]).sort((a,b)=>b[0]-a[0]);
   return chip==='X3'?{[v[0][1]]:'x3',[v[1][1]]:'x2'}:{[v[0][1]]:'x2'};}
-function teamRow(t,i,chip,start,byId,dec){
-  const b=boosts(t.d,chip);
-  const codes=t.c.map(a=>`<span class="tl-code" style="${tc(a)}">${K(a)}</span>`).join('')+
-    t.d.slice().sort((a,b)=>(chip==='NN'?b.n-a.n:b.x-a.x)).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${b[a.id]?`<span class="tl-v b">${b[a.id]}</span>`:''}</span>`).join('');
+// A team laid out like f1fantasytools.com: the two constructors stacked on the
+// left, the boosted driver (2x, or 3x over 2x with Extra DRS) next to them, and
+// the other drivers in a 2x2 block. Each tile shows the asset's (expected) points.
+// With a starting team, the assets it already has are dimmed.
+function lineup(t,b,start,row0=1){
+  const tile=(a,pos)=>`<div class="tl-tile ${b[a.id]||''}${start&&start.has(a.id)?' kept':''}" style="${pos}"><span class="k" style="${tc(a)}">${a.c}</span><span class="v">${Math.round(a.x)}</span></div>`;
+  const r=n=>`grid-row:${row0+n}`;
+  const cs=t.c.slice().sort((a,b)=>b.x-a.x), ds=t.d.slice().sort((a,b)=>b.x-a.x);
+  let up=ds.filter(a=>b[a.id]).sort((a,c)=>(b[a.id]==='x3'?-1:1)-(b[c.id]==='x3'?-1:1));
+  let rest=ds.filter(a=>!b[a.id]);
+  if(!up.length&&rest.length)up=[rest.shift()];
+  let h=cs.map((a,i)=>tile(a,`grid-column:1;${r(i)}`)).join('');
+  h+=up.length===1?tile(up[0],`grid-column:2;grid-row:${row0}/span 2;align-self:center`)
+    :up.map((a,i)=>tile(a,`grid-column:2;${r(i)}`)).join('');
+  h+=rest.map((a,i)=>tile(a,`grid-column:${3+i%2};${r(Math.floor(i/2))}`)).join('');
+  return `<div class="tl-lu">${h}</div>`;}
+function teamHead(chip,pts,cost){
+  return `<div class="tl-team" style="padding:6px 0 4px"><div></div><div class="tl-lu"><span class="hd" style="grid-column:1">CR</span><span class="hd" style="grid-column:2;text-transform:none">${chip==='X3'?'3x 2x':'2x'}</span><span class="hd" style="grid-column:3/5">DR</span></div><div class="tl-num"><small>${pts}</small></div><div class="tl-num"><small>${cost}</small></div></div>`;}
+function teamRow(t,i,chip,start,byId,dec,b,cls){
+  b=b||boosts(t.d,chip);
+  const codes=lineup(t,b,start);
   let io='';
   if(start){const ids=new Set(t.c.concat(t.d).map(a=>a.id));
     const inn=t.c.concat(t.d).filter(a=>!start.has(a.id)).map(a=>a.c);
     const out=[...start].filter(id=>!ids.has(id)).map(id=>byId[id]?byId[id].c:'?');
     io=`<div class="tl-io">${inn.length?`In ${inn.join(' ')} · Out ${out.join(' ')}`:'No transfers'}${t.pen?` · <span class="tl-dn">−${t.pen} pts</span>`:''}</div>`;}
   const pts=dec?t.pts.toFixed(1):Math.round(t.pts);
-  return `<div class="tl-team"><div class="tl-rank">${i+1}</div><div class="tl-codes">${codes}${io}</div>
+  return `<div class="tl-team${cls?' '+cls:''}"><div class="tl-rank">${typeof i==='number'?i+1:i}</div><div>${codes}${io}</div>
     <div class="tl-num">${pts}<small>pts</small></div><div class="tl-num">${fmt(t.cost)}<small>${sgn(Math.round(t.dp*10)/10)}</small></div></div>`;}
 
 // ── Team calculator ────────────────────────────────────────────────────────
@@ -582,7 +610,12 @@ function runC(){
   const o={budget:parseFloat(cB.value)||100,chip:cC.value,inc:cst.inc,exc:cst.exc,n:cst.n,
     w:+cW.value,start,free:+cF.value,cost:m?m.cost:10};
   const top=bestTeams(CA,o);
-  $('tcTeams').innerHTML=top.length?`<div class="tl-team" style="padding:4px 0"><div></div><div class="tl-rank">TEAM</div><div class="tl-num"><small>xPTS</small></div><div class="tl-num"><small>COST / xΔ$</small></div></div>`+top.map((t,i)=>teamRow(t,i,o.chip,start,CById,true)).join('')
+  let curRow='';
+  if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);
+    const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
+    if(D.length===5&&Cn.length===2){const k=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0})[0];
+      if(k)curRow=`<div class="tl-sec">${m.m}'s team now</div>`+teamRow({...k,cost:mine.reduce((a,b)=>a+b.p,0)},'',o.chip,null,null,true,null,'now')+'<div class="tl-sec">Best teams</div>';}}
+  $('tcTeams').innerHTML=top.length?teamHead(o.chip,'xPTS','COST / xΔ$')+curRow+top.map((t,i)=>teamRow(t,i,o.chip,start,CById,true)).join('')
     :'<div class="tl-note">No team fits that budget and those filters.</div>';
   $('tcMore').style.display=top.length>=cst.n&&cst.n<50?'':'none';
   if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);const col=COL[m.m]||'#ccc';
@@ -591,10 +624,8 @@ function runC(){
     if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});
       if(keep[0]){now=keep[0].pts;nowD=keep[0].dp;}}
     const sd=v=>`${v>=0?'+':'−'}$${Math.abs(v).toFixed(1)}M`;
-    const b=D.length?boosts(D,o.chip):{};
     $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team for ${C.name}: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
-      `<div class="tl-codes" style="margin-top:6px">${Cn.concat(D).sort(byPts).map(a=>`<span class="tl-code ${b[a.id]||''}" style="${tc(a)}">${K(a)}${V(Math.round(a.x))}</span>`).join('')}</div>`+
-      `<div style="margin-top:6px;color:#999">Green ring: the calculator's ${o.chip==='X3'?'3x and 2x picks':'2x pick'} for ${C.name}</div>`+
+      `<div style="margin-top:6px;color:#999">Green ring: the calculator's ${o.chip==='X3'?'3x and 2x picks':'2x pick'} for ${C.name}. Faded: already in ${m.m}'s team.</div>`+
       (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts and ${sd(top[0].dp-nowD)} price change on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
@@ -642,15 +673,22 @@ function runH(){
   const h=round(); if(!h){$('tlTeams').innerHTML='<div class="tl-note">No rounds yet.</div>';return;}
   const o={budget:parseFloat(bIn.value)||100,chip:cSel.value,inc:st.inc,exc:st.exc,n:st.n};
   const top=bestTeams(h.assets,o);
-  $('tlTeams').innerHTML=top.length?`<div class="tl-team" style="padding:4px 0"><div></div><div class="tl-rank">TEAM</div><div class="tl-num"><small>POINTS</small></div><div class="tl-num"><small>COST / Δ$</small></div></div>`+top.map((t,i)=>teamRow(t,i,o.chip)).join('')
+  const m=mgr();
+  let curRow='';
+  if(m){const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
+    const mine=m.picks.map(id=>byId[id]).filter(Boolean);
+    const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
+    if(D.length&&Cn.length){const b={};if(m.cap)b[m.cap]='x2';if(m.mega)b[m.mega]='x3';
+      curRow=`<div class="tl-sec">${m.m}'s team</div>`+teamRow({c:Cn,d:D,pts:m.pts,cost:mine.reduce((a,x)=>a+x.p,0),
+        dp:mine.reduce((a,x)=>a+(x.d||0),0)},'',o.chip,null,null,false,b,'now')+'<div class="tl-sec">Best teams</div>';}}
+  $('tlTeams').innerHTML=top.length?teamHead(o.chip,'POINTS','COST / Δ$')+curRow+top.map((t,i)=>teamRow(t,i,o.chip)).join('')
     :'<div class="tl-note">No team fits that budget and those filters.</div>';
   $('tlMore').style.display=top.length>=st.n&&st.n<50?'':'none';
-  const m=mgr();
   if(m&&top.length){const best=top[0].pts;const col=COL[m.m]||'#ccc';
     const byId=Object.fromEntries(h.assets.map(a=>[a.id,a]));
     const mine=m.picks.map(id=>byId[id]).filter(Boolean);
     const cost=mine.reduce((a,b)=>a+b.p,0);
-    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).<div class="tl-codes" style="margin-top:6px">${mine.slice().sort(byPts).map(a=>`<span class="tl-code ${a.id===m.mega?'x3':a.id===m.cap?'x2':''}" style="${tc(a)}">${K(a)}${V(a.x)}</span>`).join('')}</div>`;
+    $('tlCmp').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span> scored <b>${Math.round(m.pts)}</b>${m.chip?` with ${m.chip}`:''}, team cost ${fmt(cost)}. Best possible within ${fmt(o.budget)}: <b>${Math.round(best)}</b> (${Math.round(best-m.pts)} more).`;
   } else $('tlCmp').innerHTML='';
 }
 rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;fillMgr();setBudget();assetsBar();runH();};
