@@ -723,7 +723,9 @@ const st={inc:new Set(),exc:new Set(),n:10,cap:null,panel:null,sort:'',dir:-1};
 const rSel=$('tlRound'), mSel=$('tlMgr'), bIn=$('tlBudget'), cSel=$('tlChip');
 H.slice().reverse().forEach(h=>rSel.add(new Option(`R${h.r} ${h.name}${h.final?'':' (live)'}`,h.r)));
 function round(){return H.find(h=>h.r==rSel.value);}
-function fillMgr(){const h=round();const keep=mSel.value;mSel.innerHTML='';
+// Starts on the same manager as the calculator (Tim), so their real team shows at the top.
+let hKeep=cM.value||'Tim';
+function fillMgr(){const h=round();const keep=mSel.value||hKeep;mSel.innerHTML='';
   mSel.add(new Option('— none —',''));(h?h.teams:[]).forEach(t=>mSel.add(new Option(t.m,t.m)));
   if([...mSel.options].some(o=>o.value===keep))mSel.value=keep;}
 function mgr(){const h=round();return h&&h.teams.find(t=>t.m===mSel.value);}
@@ -757,7 +759,7 @@ function runH(){
   } else $('tlCmp').innerHTML='';
 }
 rSel.onchange=()=>{st.inc.clear();st.exc.clear();st.n=10;st.cap=null;st.panel=null;fillMgr();setBudget();assetsBar();runH();};
-mSel.onchange=()=>{setBudget();runH();};
+mSel.onchange=()=>{hKeep=mSel.value;setBudget();runH();};
 bIn.oninput=runH; cSel.onchange=runH;
 $('tlMore').onclick=()=>{st.n=Math.min(50,st.n+10);runH();};
 fillMgr();setBudget();assetsBar();runH();
