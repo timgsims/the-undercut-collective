@@ -18,6 +18,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "f1_data.db"
 MARK_PATH = BASE_DIR / "secrets" / "last_full_run.txt"
+FORCE_PATH = BASE_DIR / "secrets" / "force_full"   # penalty_watch.py: rerun the sim now
 FULL_EVERY_MINUTES = 50
 WEEKEND_BEFORE_FP1 = timedelta(hours=1)
 WEEKEND_AFTER_RACE = timedelta(hours=8)
@@ -48,9 +49,10 @@ def main():
     now = datetime.now(timezone.utc)
     if "--mark-full" in sys.argv:
         MARK_PATH.write_text(now.isoformat())
+        FORCE_PATH.unlink(missing_ok=True)
         return
     last = last_full_run()
-    if last is None or now - last >= timedelta(minutes=FULL_EVERY_MINUTES):
+    if last is None or now - last >= timedelta(minutes=FULL_EVERY_MINUTES) or FORCE_PATH.exists():
         print("full")
     elif in_race_weekend(now):
         print("quick")

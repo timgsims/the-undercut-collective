@@ -23,6 +23,12 @@ git reset --hard origin/main
 # does: "full" about once an hour (everything below, as before), "quick"
 # during a race weekend (a ~10-request fetch that saves stage snapshots for
 # no-spoiler mode, no build), or "skip" (between race weekends).
+# Grid penalties for the next race (penalty_watch.py): a web search by Claude,
+# daily in the week before teams lock and every 3 hours in the last 48. It
+# decides for itself whether one is due; a new penalty asks for a full run
+# (secrets/force_full) so the sim and site update now. Never fatal.
+timeout 900 python3 penalty_watch.py || echo "penalty_watch.py failed (non-fatal)"
+
 mode=$(python3 pipeline_mode.py)
 
 # Push notifications (notify.py -> the undercut-push container). Runs every

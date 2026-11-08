@@ -359,11 +359,25 @@ def event_history(conn, season, rnd):
     return ot, sot, pit
 
 
-def load_overrides(season, rnd):
+def load_overrides(season, rnd, conn=None):
+    """sim_overrides.json for this round, on top of the confirmed penalties
+    penalty_watch.py found (penalties.py). The file wins where both set one."""
+    ov = {}
+    if conn is not None:
+        import penalties
+        ov = penalties.as_overrides(conn, season, rnd)
     try:
-        return json.loads(OVERRIDES.read_text()).get(f"{season}-{rnd}", {})
+        hand = json.loads(OVERRIDES.read_text()).get(f"{season}-{rnd}", {})
     except (OSError, ValueError):
-        return {}
+        hand = {}
+    for k, v in hand.items():
+        if isinstance(v, dict) and isinstance(ov.get(k), dict):
+            ov[k] = {**ov[k], **v}
+        elif isinstance(v, list) and isinstance(ov.get(k), list):
+            ov[k] = sorted(set(ov[k]) | set(v))
+        else:
+            ov[k] = v
+    return ov
 
 
 # ── The simulation ─────────────────────────────────────────────────────────
@@ -425,7 +439,7 @@ def simulate(conn, season, rnd, after="pre", sims=SIMS, seed=1, live=False):
         top = min(pace.values())
         pace = {k: top + (v - top) * P["pace_mult"] for k, v in pace.items()}
 
-    ov = load_overrides(season, rnd)
+    ov = load_overrides(season, rnd, conn)
     for code, delta in ov.get("pace", {}).items():
         for k in keys:
             if k[0] == code:
@@ -540,11 +554,14 @@ def official_grid(conn, season, rnd, keys, ov):
 
 
 def grid_from_quali(qpos, ov, keys):
-    """Qualifying order plus grid penalties from sim_overrides.json:
-    {"2026-19": {"grid_penalty": {"BOR": 5}, "back": ["BOT"]}}."""
+    """Qualifying order plus grid penalties (load_overrides):
+    {"2026-19": {"grid_penalty": {"BOR": 5}, "back": ["BOT"], "pitlane": ["PER"]}}.
+    Pit lane starters go behind the back-of-grid cars."""
     pen = ov.get("grid_penalty", {})
     back = set(ov.get("back", []))
-    order = sorted(keys, key=lambda k: (k[0] in back, (qpos.get(k) or 23) + pen.get(k[0], 0) + 0.01 * (k[0] in pen)))
+    pit = set(ov.get("pitlane", []))
+    order = sorted(keys, key=lambda k: (2 if k[0] in pit else 1 if k[0] in back else 0,
+                                        (qpos.get(k) or 23) + pen.get(k[0], 0) + 0.01 * (k[0] in pen)))
     return {k: i + 1 for i, k in enumerate(order)}
 
 

@@ -139,7 +139,7 @@ fetch_f1_data.py  →  f1_data.db (SQLite, gitignored)  →  build_dashboard.py 
     lock reminder and new prices can fall outside race weekends): decides
     what's due and sends each thing once (`notify_log`). Kinds: lock (2 h
     before teams lock, from F1 Fantasy's schedule feed; 7:30pm the evening
-    before a lock in the night), sim (each new simulation stage once it's on the site, until the lock; replaced fp1 on 7 Nov 2026, on for everyone unless switched off), inactive (a picked driver with
+    before a lock in the night), sim (each new simulation stage once it's on the site, until the lock; replaced fp1 on 7 Nov 2026, on for everyone unless switched off), penalty (each new or newly confirmed grid penalty once the site shows it, 8 Nov 2026, on for everyone), inactive (a picked driver with
     `players.active=0`), quali, final, prices, chips (4, 2 and 1 races left).
     Nothing goes out 10pm-7:30am NZ; it waits for 7:30am unless stale by then.
     `--dry-run` prints what would go (with `NOTIFY_NOW=<iso time>` to pretend
@@ -327,4 +327,17 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
 - **Season-archive navigation** — not needed until a 2nd season of data
   exists.
 
+- **Grid penalties (2026-11-08, Tim):** `penalty_watch.py` runs at the top of every `run_pipeline.sh` run and
+  decides for itself whether to search: once a day from 10am NZ in the 7 days before teams lock, every 3 hours
+  in the last 48, never after the lock (after qualifying the sim uses OpenF1's official grid). It runs headless
+  Claude Code on Tim's Pro plan from `~/.f1-claude/` (binary and token copied from HomeBase's, so the token
+  expires with HomeBase's in Nov 2027: renew both together; HomeLab warns for HomeBase's). Sonnet with web
+  search, about $0.07 a run at API prices. Results go in `penalties` (`penalties.py`; `penalty_checks` logs each
+  search and its cost; `secrets/penalty_watch.log`). Confirmed ones go into the sim's grid before qualifying
+  (`sim.load_overrides`, `sim_overrides.json` still wins); expected ones are shown, not simulated. A change
+  leaves `secrets/force_full`, so the same pipeline run reruns the sim and `gate_check.py` rebuilds; the Tools
+  tab shows a "Grid penalties" box at the top for the round the calculator plans; `notify.py` sends "penalty".
+  Two failed searches in a row tell Tim through `~/hl-notify.py`, once a day. Corrections by hand:
+  `python3 penalty_watch.py --add VER back` / `--add HAM places 10` / `--remove VER` / `--list` (add a round
+  number to target another round). Claude can invent a link, so dead links (404/410) are dropped.
 - **Tools tab rebuilds (2026-11-07):** `gate_check.py` also rebuilds on a new simulation stage or new prices, as those change with no points moving. OpenF1 returns 401 while a session is live (from about 40 min before); `sim_data.py` waits for the next run.

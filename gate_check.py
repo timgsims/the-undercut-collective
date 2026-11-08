@@ -42,7 +42,15 @@ def tools_state(conn, season):
         sims = []
     priced = conn.execute("SELECT MAX(round) FROM player_results WHERE season=? AND value IS NOT NULL",
                           (season,)).fetchone()[0]
-    return json.dumps({"sims": sims, "priced": priced})
+    try:
+        pen = {}
+        for rnd, pid, status, kind, places in conn.execute(
+                "SELECT round, id, status, kind, places FROM penalties WHERE season=? AND removed=0 ORDER BY id",
+                (season,)):
+            pen.setdefault(str(rnd), []).append([pid, status, kind, places])
+    except sqlite3.OperationalError:
+        pen = {}
+    return json.dumps({"sims": sims, "priced": priced, "pen": pen})
 
 
 def main():
@@ -60,7 +68,7 @@ def main():
         TOOLS_MARK.write_text(state)
         return
     if not TOOLS_MARK.exists() or TOOLS_MARK.read_text() != state:
-        print("Tools tab has a new simulation stage or new prices: rebuilding")
+        print("Tools tab has a new simulation stage, new prices or penalties: rebuilding")
         sys.exit(0)
 
     # Retro-correction check, ahead of the window logic below: if the points of

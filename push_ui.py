@@ -14,6 +14,7 @@ PUSH_API = "https://f1push.simsey.co.nz"
 KINDS = [
     ("lock", "Team lock reminder", "2 hours before teams lock, or 7:30pm the night before if it's in the night"),
     ("sim", "New simulation", "When a new simulation is out: very early, then after each practice"),
+    ("penalty", "Grid penalties", "When a driver gets a grid penalty, back-of-grid or pit lane start for the next race"),
     ("inactive", "Driver not racing", "If a driver in your team won't be in the next race"),
     ("quali", "Qualifying points", "Your points and place after qualifying (a spoiler if you watch later)"),
     ("final", "Final points", "Your score and league place once a round is final (also a spoiler)"),

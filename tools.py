@@ -327,7 +327,27 @@ def read_tools_data(conn, season, race_name_by_round):
         elite.append({"r": r, "name": race_name_by_round.get(r, f"Round {r}"), "n": e["n"], "nd": e["nd"],
                       "mgrs": mgr_n, "chips": e["chips"], "assets": assets})
 
-    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours, "elite": elite}
+    # ── Grid penalties for the round the calculator plans (penalty_watch.py) ─
+    pen_box = None
+    if calc:
+        import penalties
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        nz = ZoneInfo("Pacific/Auckland")
+
+        def when(iso):
+            t = datetime.fromisoformat(iso).astimezone(nz)
+            return f"{t:%a} {t.day} {t:%b}, {t.hour % 12 or 12}:{t:%M}{'am' if t.hour < 12 else 'pm'}"
+        drv = {c: (n, k) for c, n, k in conn.execute("SELECT tla, name, team_id FROM players WHERE type='driver'")}
+        items = [{"c": x["code"], "n": drv.get(x["code"], (x["code"], ""))[0], "k": drv.get(x["code"], ("", ""))[1],
+                  "what": penalties.describe(x), "st": x["status"], "why": x["reason"], "url": x["url"],
+                  "src": x["title"]} for x in penalties.for_round(conn, season, calc["r"])]
+        checked = penalties.last_check(conn, season, calc["r"])
+        if items or checked:
+            pen_box = {"r": calc["r"], "name": calc["name"], "items": items, "checked": when(checked) if checked else None}
+
+    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours, "elite": elite,
+            "pen": pen_box}
 
 
 def _json(v):
@@ -356,6 +376,14 @@ TOOLS_HTML = r"""
 .tl-ctl input{padding-right:9px}
 .tl-ctl select{background-image:linear-gradient(45deg,transparent 50%,#888 50%),linear-gradient(135deg,#888 50%,transparent 50%);background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px;background-repeat:no-repeat}
 .tl-note{font-size:11px;color:#777;line-height:1.45;margin:6px 0 10px}
+.tl-pen{border:0.5px solid #333;border-radius:10px;background:#161616;padding:10px 12px;margin:2px 0 12px}
+.tl-pen h4{margin:0 0 6px;font-size:13px;font-weight:600;color:#e8e8e6}
+.tl-pen .row{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:start;padding:6px 0;border-top:0.5px solid #262626}
+.tl-pen .row:first-of-type{border-top:0}
+.tl-pen .what{font-size:13px;color:#e8e8e6}
+.tl-pen .why{font-size:11px;color:#888;line-height:1.4;margin-top:2px}
+.tl-pen .why a{color:#8ab4f8}
+.tl-pen .exp{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#d9a441;margin-left:6px}
 .tl-team{display:grid;grid-template-columns:16px 1fr 44px 40px;gap:4px;align-items:center;padding:8px 0;border-bottom:0.5px solid #2a2a2a}
 .tl-rank{font-size:11px;color:#666}
 .tl-codes{display:flex;flex-wrap:wrap;gap:3px}
@@ -392,6 +420,7 @@ TOOLS_HTML = r"""
 .tl-io{flex-basis:100%;font-size:10px;color:#888;margin-top:2px}
 .tl-sub button{padding:8px 4px}
 </style>
+<div id="tlPen"></div>
 <div class="tl-sub">
   <button id="tlBtnC" class="on" onclick="tlShow('c')">Team Calculator</button>
   <button id="tlBtnH" onclick="tlShow('h')">Hindsight</button>
@@ -455,6 +484,18 @@ const TC=T.colours||{};
 const K=a=>`<span class="tl-k">${a.c}</span>`, V=v=>`<span class="tl-v">${v}</span>`;
 const SIMWHEN={pre:'before practice',fp1:'after FP1',fp2:'after FP2',fp3:'after FP3',quali:'after qualifying'};
 const SIMSTAGE={pre:'very early',fp1:'post FP1',fp2:'post FP2',fp3:'post FP3',quali:'post qualifying'};
+// Grid penalties at the top (penalty_watch.py): confirmed ones are in the sim.
+(()=>{const P=T.pen, el=$('tlPen'); if(!P||!el)return;
+  const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+  const rows=P.items.map(i=>{const c=TC[i.k];
+    return `<div class="row"><span class="tl-code" style="${c?`background:${c[0]};color:${c[1]}`:''}"><span class="tl-k">${esc(i.c)}</span></span>`+
+      `<div><div class="what">${esc(i.what)}${i.st==='expected'?'<span class="exp">Expected</span>':''}</div>`+
+      `<div class="why">${esc(i.why)}${i.st==='expected'?' Not in the simulation until confirmed.':''}`+
+      `${i.url?` <a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.src||'Source')}</a>`:''}</div></div></div>`;}).join('');
+  el.innerHTML=`<div class="tl-pen"><h4>Grid penalties · ${esc(P.name)}</h4>`+
+    (rows||`<div class="why">None found yet.</div>`)+
+    `<div class="tl-note" style="margin:8px 0 0">Claude searches the news daily in race week, then every 3 hours until teams lock. Confirmed penalties are in the simulation.${P.checked?` Last checked ${P.checked}.`:''}</div></div>`;
+})();
 const head=(r,name,sub)=>`<div class="tl-head"><span class="rn">R${r}</span><div class="nm">${name}<small>${sub}</small></div></div>`;
 // Constructors first, then drivers; each highest points first.
 const byPts=(a,b)=>(a.t>b.t?1:a.t<b.t?-1:b.x-a.x||b.p-a.p);

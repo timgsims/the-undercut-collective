@@ -233,3 +233,9 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
   as team records are noisy; don't push it (search went to 0.3 = ~6%, not credible, nor `ot_mult` 0.3). Sim
   overtakes are probably too high: unchecked. Team-pick test not rerun for these settings: over 8 races it's noise.
   Next: repeat after Abu Dhabi and in 2027; settings came from 17 races of one rule set.
+- **2026-11-08: grid penalties found by Claude (Tim).** The sim could take penalties before qualifying, but only
+  from a file edited by hand. Now `penalty_watch.py` searches the news daily in race week (every 3 h in the last
+  48 h before the lock) and the Tools tab lists them at the top. Test, Las Vegas very early on R1-19 data: VER
+  to the back 22.7 -> 31.4 xPts, HAM 10-place drop 24.5 -> 28.9 (places gained). Brazil, real grid against
+  qualifying order: VER 17.5 -> 21.4, HAM 16.5 -> 17.9. Check after Brazil whether back-of-grid cars actually
+  scored that much; `ot_mult` 0.6 is the main lever if not.

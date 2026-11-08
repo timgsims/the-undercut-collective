@@ -146,6 +146,14 @@ def published_stage(rnd):
         return None
 
 
+def published_penalties(rnd):
+    """[[id, status, kind, places]] the site shows for a round."""
+    try:
+        return json.loads(TOOLS_BUILT.read_text()).get("pen", {}).get(str(rnd), [])
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
 def place(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
@@ -196,6 +204,28 @@ def due_messages(lg, locks, now):
                    "title": f"{race} simulation: {SIM_STAGE[stage]}",
                    "body": f"{body} See the Team Calculator before teams lock {when_nz(lock, now)}."}
             out.append((f"sim:{lg.season}:{nxt}:{stage}", lock, now - dt.timedelta(days=30),
+                        [{**msg, "manager": m} for m in [None] + [lg.managers[x] for x in mids]]))
+
+        # Grid penalties (penalty_watch.py), once the site shows them
+        import penalties
+        names = dict(lg.c.execute("SELECT tla, name FROM players WHERE type='driver'"))
+        shown = [tuple(x) for x in published_penalties(nxt)]
+        for p in penalties.for_round(lg.c, lg.season, nxt):
+            if (p["id"], p["status"], p["kind"], p["places"]) not in shown:
+                continue
+            who = names.get(p["code"], p["code"]).split(". ", 1)[-1]   # "M. Verstappen" -> "Verstappen"
+            will = "to" if p["status"] == "confirmed" else "expected to"
+            what = {"back": "start from the back", "pitlane": "start from the pit lane"}.get(
+                p["kind"], f"get a {penalties.describe(p)}")
+            why = p["reason"].strip()
+            if why and why[-1] not in ".!?":
+                why += "."
+            tail = ("The simulation includes it." if p["status"] == "confirmed"
+                    else "Not in the simulation until it's confirmed.")
+            msg = {"type": "penalty", "tag": f"penalty-{nxt}-{p['code']}", "url": SITE + "#tools",
+                   "title": f"{race}: {who} {will} {what}", "body": f"{why} {tail}".strip()}
+            out.append((f"penalty:{lg.season}:{nxt}:{p['id']}:{p['status']}:{p['kind']}:{p['places']}", lock,
+                        now - dt.timedelta(days=30),
                         [{**msg, "manager": m} for m in [None] + [lg.managers[x] for x in mids]]))
 
         # A driver who isn't racing, in someone's team
