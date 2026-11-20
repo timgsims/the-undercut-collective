@@ -327,6 +327,13 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
 - **Season-archive navigation** — not needed until a 2nd season of data
   exists.
 
+- **Weather (2026-11-21, Tim):** `weather.py` runs at the top of every `run_pipeline.sh` run: for each weekend
+  whose race isn't over and whose FP1 is within 10 days, it reads the session timetable from OpenF1 and an hourly
+  forecast at the circuit from Open-Meteo (free, no key; circuit coordinates in `CIRCUITS`, a new circuit is looked
+  up by town), every 12 hours, hourly from 3 days before FP1. Table `weather` (one row per session: temperature,
+  max rain chance, rain mm, max wind, worst WMO sky code), `weather_checks`. The Tools tab shows a box per weekend
+  under the penalties box (NZ times, the lock marked); `gate_check.py` rebuilds when `weather.summary()` moves
+  (10% rain, 2 degrees, 10 km/h, sky). The simulation doesn't use the weather.
 - **Grid penalties (2026-11-08, Tim):** `penalty_watch.py` runs at the top of every `run_pipeline.sh` run and
   decides for itself whether to search: once a day from 10am NZ in the 7 days before teams lock, every 3 hours
   in the last 48, never after the lock (after qualifying the sim uses OpenF1's official grid). It runs headless

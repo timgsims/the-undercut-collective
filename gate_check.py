@@ -50,7 +50,12 @@ def tools_state(conn, season):
             pen.setdefault(str(rnd), []).append([pid, status, kind, places])
     except sqlite3.OperationalError:
         pen = {}
-    return json.dumps({"sims": sims, "priced": priced, "pen": pen})
+    try:   # the weather box: rebuilds when a forecast moves enough to matter
+        import weather
+        wx = weather.summary(conn, season)
+    except Exception:
+        wx = []
+    return json.dumps({"sims": sims, "priced": priced, "pen": pen, "wx": wx})
 
 
 def main():
@@ -68,7 +73,7 @@ def main():
         TOOLS_MARK.write_text(state)
         return
     if not TOOLS_MARK.exists() or TOOLS_MARK.read_text() != state:
-        print("Tools tab has a new simulation stage, new prices or penalties: rebuilding")
+        print("Tools tab has a new simulation stage, new prices, penalties or weather: rebuilding")
         sys.exit(0)
 
     # Retro-correction check, ahead of the window logic below: if the points of

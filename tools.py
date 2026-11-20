@@ -346,8 +346,44 @@ def read_tools_data(conn, season, race_name_by_round):
         if items or checked:
             pen_box = {"r": calc["r"], "name": calc["name"], "items": items, "checked": when(checked) if checked else None}
 
+    # ── Weather for each weekend whose race isn't over yet (weather.py) ────
+    wx = []
+    try:
+        from datetime import datetime, timezone, timedelta
+        from zoneinfo import ZoneInfo
+        nzt = ZoneInfo("Pacific/Auckland")
+        now = datetime.now(timezone.utc)
+
+        def nz(iso):
+            t = datetime.fromisoformat(iso).astimezone(nzt)
+            return f"{t:%a} {t.hour % 12 or 12}:{t:%M}{'am' if t.hour < 12 else 'pm'}"
+        races = {r: (datetime.fromisoformat(f), datetime.fromisoformat(x)) for r, f, x in conn.execute(
+            "SELECT round, fp1_utc, race_utc FROM race_schedule WHERE season=? AND race_utc IS NOT NULL", (season,))}
+        rows = conn.execute("SELECT round, session, start_utc, end_utc, temp, rain_prob, rain_mm, wind, code, "
+                            "fetched_at FROM weather WHERE season=? ORDER BY round, start_utc", (season,)).fetchall()
+        by = {}
+        for rnd, ses, st, en, temp, prob, mm, wind, code, at in rows:
+            if rnd not in races or races[rnd][1] + timedelta(hours=3) < now:
+                continue
+            b = by.setdefault(rnd, {"r": rnd, "name": race_name_by_round.get(rnd, f"Round {rnd}"),
+                                    "live": races[rnd][0] <= now, "at": at, "s": []})
+            b["at"] = max(b["at"], at)
+            b["s"].append({"n": ses, "t": nz(st), "done": datetime.fromisoformat(en) < now, "c": temp,
+                           "p": prob, "mm": mm, "w": wind, "k": code})
+        for b in by.values():
+            # Teams lock at the start of qualifying (sprint qualifying on a sprint weekend).
+            lock = next((i for i, s in enumerate(b["s"]) if s["n"] == "Sprint quali"), None)
+            if lock is None:
+                lock = next((i for i, s in enumerate(b["s"]) if s["n"] == "Quali"), None)
+            b["lock"] = lock
+            t = datetime.fromisoformat(b["at"]).astimezone(nzt)
+            b["at"] = f"{t:%a} {t.day} {t:%b}, {t.hour % 12 or 12}:{t:%M}{'am' if t.hour < 12 else 'pm'}"
+        wx = [by[r] for r in sorted(by)]
+    except sqlite3.OperationalError:
+        pass
+
     return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours, "elite": elite,
-            "pen": pen_box}
+            "pen": pen_box, "wx": wx}
 
 
 def _json(v):
@@ -384,6 +420,16 @@ TOOLS_HTML = r"""
 .tl-pen .why{font-size:11px;color:#888;line-height:1.4;margin-top:2px}
 .tl-pen .why a{color:#8ab4f8}
 .tl-pen .exp{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#d9a441;margin-left:6px}
+.tl-wx .wr{display:grid;grid-template-columns:minmax(0,1fr) 28px 44px 56px 58px;gap:6px;align-items:center;padding:6px 0;border-top:0.5px solid #262626;font-variant-numeric:tabular-nums}
+.tl-wx .wr.hd{border-top:0;padding:0 0 2px;font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.04em}
+.tl-wx .wr.done{opacity:.45}
+.tl-wx .sn{font-size:13px;color:#e8e8e6}
+.tl-wx .sn small{display:block;font-size:11px;color:#888}
+.tl-wx .ic{font-size:18px;text-align:center;line-height:1}
+.tl-wx .nu{font-size:13px;color:#ddd;text-align:right}
+.tl-wx .nu small{display:block;font-size:10px;color:#888}
+.tl-wx .wet{color:#6cb6ff;font-weight:600}
+.tl-wx .lock{font-size:10px;color:#d9a441;text-transform:uppercase;letter-spacing:.04em;padding:4px 0 2px;border-top:0.5px solid #262626}
 .tl-team{display:grid;grid-template-columns:18px minmax(0,1fr) 46px 44px;gap:6px;align-items:center;padding:10px 0;border-bottom:0.5px solid #2a2a2a}
 .tl-rank{font-size:11px;color:#666}
 .tl-codes{display:flex;flex-wrap:wrap;gap:3px}
@@ -446,6 +492,7 @@ TOOLS_HTML = r"""
 .tl-sub button{padding:8px 4px}
 </style>
 <div id="tlPen"></div>
+<div id="tlWx"></div>
 <div class="tl-sub">
   <button id="tlBtnC" class="on" onclick="tlShow('c')">Team Calculator</button>
   <button id="tlBtnH" onclick="tlShow('h')">Hindsight</button>
@@ -520,6 +567,25 @@ const SIMSTAGE={pre:'very early',fp1:'post FP1',fp2:'post FP2',fp3:'post FP3',qu
   el.innerHTML=`<div class="tl-pen"><h4>Grid penalties · ${esc(P.name)}</h4>`+
     (rows||`<div class="why">None found yet.</div>`)+
     `<div class="tl-note" style="margin:8px 0 0">Claude searches the news daily in race week, then every 3 hours until teams lock. Confirmed penalties are in the simulation.${P.checked?` Last checked ${P.checked}.`:''}</div></div>`;
+})();
+// Weather (weather.py, Open-Meteo): one box per weekend whose race isn't over.
+(()=>{const W=T.wx, el=$('tlWx'); if(!W||!W.length||!el)return;
+  const sky=k=>k==null?'':k===0?'☀️':k<=2?'🌤️':k===3?'☁️':k<=48?'🌫️':k<=57?'🌦️':k<=67?'🌧️':k<=77?'🌨️':k<=82?'🌦️':'⛈️';
+  const what=k=>k==null?'':k===0?'Clear':k<=2?'Partly cloudy':k===3?'Cloudy':k<=48?'Fog':k<=57?'Drizzle':k<=67?'Rain':k<=77?'Snow':k<=82?'Showers':'Thunderstorms';
+  el.innerHTML=W.map(b=>{
+    const rows=b.s.map((s,i)=>(i===b.lock?`<div class="lock">🔒 Teams lock</div>`:'')+
+      `<div class="wr${s.done?' done':''}"><div class="sn">${s.n}<small>${s.t}${s.done?' · done':''}</small></div>`+
+      `<div class="ic" title="${what(s.k)}">${sky(s.k)}</div>`+
+      `<div class="nu">${s.c==null?'—':Math.round(s.c)+'°'}</div>`+
+      (s.done?`<div class="nu${s.mm>=0.1?' wet':''}">${s.mm>=0.1?s.mm+'<small>mm fell</small>':'Dry'}</div>`
+        :`<div class="nu${s.p>=40?' wet':''}">${s.p==null?'—':s.p+'%'}${s.mm>=0.1?`<small>${s.mm} mm</small>`:''}</div>`)+
+      `<div class="nu">${s.w==null?'—':s.w}<small>km/h</small></div></div>`).join('');
+    const wet=b.s.some(s=>!s.done&&s.p>=40);
+    return `<div class="tl-pen tl-wx"><h4>Weather · ${b.name}${b.live?' (this weekend)':''}</h4>`+
+      `<div class="wr hd"><div>Session (NZ time)</div><div></div><div class="nu">Temp</div><div class="nu">Rain</div><div class="nu">Wind</div></div>`+
+      rows+
+      `<div class="tl-note" style="margin:8px 0 0">${wet?'<b>Rain is possible.</b> A wet session shuffles the order, and the simulation doesn\'t model rain. ':''}`+
+      `Forecast for the circuit from Open-Meteo, updated ${b.at}. Checked twice a day, then hourly from 3 days before FP1. Rain is the chance of any rain during the session; for a session that has run, what fell.</div></div>`;}).join('');
 })();
 const head=(r,name,sub)=>`<div class="tl-head"><span class="rn">R${r}</span><div class="nm">${name}<small>${sub}</small></div></div>`;
 // Constructors first, then drivers; each highest points first.

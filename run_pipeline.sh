@@ -29,6 +29,11 @@ git reset --hard origin/main
 # (secrets/force_full) so the sim and site update now. Never fatal.
 timeout 900 python3 penalty_watch.py || echo "penalty_watch.py failed (non-fatal)"
 
+# Weather for each session of the coming weekends (weather.py, Open-Meteo):
+# twice a day from 10 days out, hourly from 3 days before FP1. gate_check.py
+# rebuilds the site when a forecast moves enough to matter. Never fatal.
+timeout 180 python3 weather.py || echo "weather.py failed (non-fatal)"
+
 mode=$(python3 pipeline_mode.py)
 
 # Push notifications (notify.py -> the undercut-push container). Runs every
