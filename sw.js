@@ -49,12 +49,21 @@ self.addEventListener('push', (event) => {
   }));
 });
 
+// Tapping a notification always shows the latest build: an open app is sent
+// to the URL with a cache-busting ?n= (a same-URL or hash-only navigation
+// doesn't reload the page), and told to check for a newer build in case the
+// browser can't navigate it (the page strips ?n= again).
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+  const url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin);
+  const fresh = new URL(url.href);
+  fresh.searchParams.set('n', Date.now());
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
     const w = list.find((c) => 'focus' in c);
-    if (w) return (w.navigate ? w.navigate(url).catch(() => w) : Promise.resolve(w)).then((c) => (c || w).focus());
-    return self.clients.openWindow(url);
+    if (w) {
+      try { w.postMessage({ type: 'uc-refresh', hash: url.hash }); } catch (e) {}
+      return (w.navigate ? w.navigate(fresh.href).catch(() => w) : Promise.resolve(w)).then((c) => (c || w).focus());
+    }
+    return self.clients.openWindow(fresh.href);
   }));
 });

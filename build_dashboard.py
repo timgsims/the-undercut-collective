@@ -3569,6 +3569,48 @@ window.addEventListener('hashchange', tabFromHash);
 if ('serviceWorker' in navigator) {{
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
 }}
+// Stay current. An installed app can sit open for days, so whenever it comes
+// back on screen (and every 5 minutes while it's showing) ask the site whether
+// a newer build is up, and reload onto the same tab and scroll position if so.
+(function() {{
+  if (/[?&]n=/.test(location.search)) {{
+    try {{ history.replaceState(null, '', location.pathname + location.hash); }} catch(e) {{}}
+  }}
+  try {{
+    const y = sessionStorage.getItem('uc-scroll');
+    if (y) {{ sessionStorage.removeItem('uc-scroll'); window.scrollTo(0, +y); }}
+  }} catch(e) {{}}
+  const mine = Date.parse(document.lastModified) || 0;
+  let busy = false, last = 0;
+  async function check(force) {{
+    if (busy || document.visibilityState !== 'visible') return;
+    if (!force && Date.now() - last < 30000) return;
+    busy = true; last = Date.now();
+    try {{
+      const r = await fetch(location.pathname, {{method: 'HEAD', cache: 'no-store'}});
+      const lm = Date.parse(r.headers.get('Last-Modified') || '');
+      if (lm && mine && lm > mine + 1000) {{
+        let done = '';
+        try {{ done = sessionStorage.getItem('uc-reloaded') || ''; }} catch(e) {{}}
+        if (done !== String(lm)) {{   // never loop if the site keeps answering with the same build
+          try {{ sessionStorage.setItem('uc-reloaded', String(lm)); sessionStorage.setItem('uc-scroll', String(window.scrollY)); }} catch(e) {{}}
+          location.reload();
+          return;
+        }}
+      }}
+    }} catch(e) {{}}
+    busy = false;
+  }}
+  document.addEventListener('visibilitychange', () => check(false));
+  window.addEventListener('pageshow', e => {{ if (e.persisted) check(true); }});
+  window.addEventListener('focus', () => check(false));
+  setInterval(() => check(true), 5 * 60 * 1000);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {{
+    if (!e.data || e.data.type !== 'uc-refresh') return;
+    if (e.data.hash && e.data.hash !== location.hash) location.hash = e.data.hash;
+    check(true);
+  }});
+}})();
 </script>
 </body>
 </html>"""
