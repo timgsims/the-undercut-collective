@@ -43,7 +43,7 @@ P = {
     "drv_prior": 1.5,       # rounds of "same as team-mate" a driver's form starts from
     "gap_cap": 4.0,        # % off pole a bad day counts as at most
     "sd_quali": 0.45,      # % noise per driver in qualifying
-    "slot": 0.06,          # % of lap time a grid slot is worth in the race
+    "slot": 0.03,          # % of lap time a grid slot is worth in the race (0.06 until 20 Nov 2026)
     "sprint_sd": 0.7,      # sprint race noise, as a share of the race's
     "fp_weight": 0.25,     # weight of each practice session's pace (max 3)
     "q_weight": 0.3,       # weight of this weekend's qualifying in race pace
@@ -51,7 +51,10 @@ P = {
                            # made the 2026 backtest worse (12.74 -> 12.78-13.47)
     "dnf_prior": 20,       # starts of league-average reliability a team starts from
     "ot_prior": 4,         # races of field-average overtakes a driver starts from
-    "ot_gain": 0.25,       # extra overtakes per place gained
+    # Extra overtakes per place gained (0.25 until 20 Nov 2026). Drivers starting 4+ places behind
+    # their qualifying spot (R5-20, 19 cases) made ~0.6 more per place gained and the sim scored
+    # them ~10 pts low; with 0.6 and slot 0.03 it is ~5 low, and the backtest improves at every stage.
+    "ot_gain": 0.6,
     # Track history (2026-11-02): both off. On 2026 R5-18 every setting made the
     # pre-weekend error worse (12.81 -> 12.86-13.00) or no clearer than noise
     # (similar tracks 1.0: 12.79, but worse after FP3). 2026 is a new rule set,

@@ -239,3 +239,11 @@ simulation is realistically a 2027 thing, with 2026 as its training and test dat
   to the back 22.7 -> 31.4 xPts, HAM 10-place drop 24.5 -> 28.9 (places gained). Brazil, real grid against
   qualifying order: VER 17.5 -> 21.4, HAM 16.5 -> 17.9. Check after Brazil whether back-of-grid cars actually
   scored that much; `ot_mult` 0.6 is the main lever if not.
+- **2026-11-20: grid-drop check after Brazil (Tim).** Drivers starting 4+ places behind their qualifying spot
+  (R5-20, 19 cases, quali stage so the real grid is known) scored ~10 pts more than the sim said: they made
+  ~10 overtakes against a field average of ~5, about 0.6 more per place gained, where the sim used 0.25.
+  `ot_mult` wasn't the lever (it scales everyone). Now `ot_gain` 0.6 and `slot` 0.03 (was 0.06): those drivers
+  are ~5 pts low instead of ~10, and the R5-20 backtest improves at every stage (pre 12.58 -> 12.51, fp3
+  12.45 -> 12.43, quali 12.27 -> 12.11; 10-90% range 76 -> 78%). Script: the check is easy to redo with a
+  copy of `sim_backtest.actuals` and `sim.simulate(..., "quali")` over rounds with grid drops.
+
