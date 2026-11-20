@@ -3160,11 +3160,20 @@ SHARED_CSS = """
   .header-top { display: flex; align-items: center; gap: 10px; padding: 10px 0 8px; border-bottom: 1px solid #1a1a1a; }
   .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   .header-badge { margin-left: auto; font-size: 10px; color: #666; background: #1a1a1a; border: 0.5px solid #2a2a2a; padding: 2px 8px; border-radius: 20px; }
-  .tab-nav { display: flex; gap: 2px; overflow-x: auto; padding: 6px 0; scrollbar-width: none; }
-  .tab-nav::-webkit-scrollbar { display: none; }
-  .tab-btn { flex-shrink: 0; background: transparent; border: none; color: #555; font-size: 12px; font-weight: 500; font-family: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer; transition: color 0.12s, background 0.12s; white-space: nowrap; }
-  .tab-btn:hover { color: #aaa; background: #1a1a1a; }
-  .tab-btn.active { color: #e8e8e6; background: #1e1e1e; border: 0.5px solid #2a2a2a; }
+  /* Pages: a menu button top left drops down every page (was a scrolling tab bar, 21 Nov 2026). */
+  .menu-btn { flex: none; width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; background: #1a1a1a; border: 0.5px solid #2a2a2a; border-radius: 8px; color: #e8e8e6; cursor: pointer; padding: 0; font-family: inherit; }
+  .menu-btn svg { display: block; }
+  .menu-btn.on { background: #262626; border-color: #3a3a3a; }
+  .header-title small { display: block; font-size: 11px; font-weight: 500; color: #888; margin-top: 1px; letter-spacing: 0; white-space: nowrap; }
+  @media (max-width: 400px) { .hb-s { display: none; } }
+  .page-menu { display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 10px 0 12px; }
+  .page-menu.on { display: grid; }
+  .tab-btn { display: flex; align-items: center; gap: 8px; min-width: 0; text-align: left; background: #161616; border: 0.5px solid #242424; color: #bbb; font-size: 14px; font-weight: 500; font-family: inherit; padding: 11px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab-btn:hover { color: #e8e8e6; background: #1e1e1e; }
+  .tab-btn.active { color: #fff; background: #242424; border-color: #3d3d3d; }
+  .menu-dim { position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.55); display: none; }
+  .menu-dim.on { display: block; }
+  @media (max-width: 600px) { .page-menu { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
   .panel-body { max-width: 860px; margin: 0 auto; padding: 1.5rem; }
@@ -3532,26 +3541,36 @@ window.ucSetMe=function(n){{try{{if(n)localStorage.setItem('uc-weekend-manager',
 <div class="site-header">
   <div class="header-inner">
     <div class="header-top">
-      <span style="font-size:16px">🏎</span>
-      <span class="header-title">The Undercut Collective</span>
-      <span class="header-badge">{SEASON} Season · {nd}/{nt} races · Updated {updated_str}</span>
+      <button class="menu-btn" id="menuBtn" aria-label="Pages" aria-expanded="false" aria-controls="pageMenu" onclick="ucMenu()"><svg width="18" height="14" viewBox="0 0 18 14" fill="none"><path d="M1 1h16M1 7h16M1 13h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      <span class="header-title">The Undercut Collective<small id="pageName">{PANELS[0][0]}</small></span>
+      <span class="header-badge"><span class="hb-s">{SEASON} Season · {nd}/{nt} races · </span>Updated {updated_str}</span>
       {push_ui.BELL_BUTTON}
     </div>
-    <nav class="tab-nav">
+    <nav class="page-menu" id="pageMenu">
 {tab_buttons}    </nav>
   </div>
 {spoiler_bar}
 </div>
+<div class="menu-dim" id="menuDim" onclick="ucMenu(false)"></div>
 <div id="tab-content">
 {panel_divs}</div>
 {push_ui.panel_html(data["managers"])}
 <script>
+function ucMenu(open) {{
+  const m = document.getElementById('pageMenu'), b = document.getElementById('menuBtn');
+  if (open === undefined) open = !m.classList.contains('on');
+  m.classList.toggle('on', open); b.classList.toggle('on', open);
+  document.getElementById('menuDim').classList.toggle('on', open);
+  b.setAttribute('aria-expanded', open ? 'true' : 'false');
+}}
+document.addEventListener('keydown', e => {{ if (e.key === 'Escape') ucMenu(false); }});
 function showTab(slug, fromRestore) {{
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + slug).classList.add('active');
   document.getElementById('tab-' + slug).classList.add('active');
-  document.getElementById('tab-' + slug).scrollIntoView({{behavior:'smooth',block:'nearest',inline:'center'}});
+  document.getElementById('pageName').textContent = document.getElementById('tab-' + slug).textContent;
+  ucMenu(false);
   window.scrollTo({{top:0, behavior: fromRestore ? 'instant' : 'smooth'}});
   try {{ sessionStorage.setItem('uc-tab', slug); }} catch(e) {{}}
 }}
