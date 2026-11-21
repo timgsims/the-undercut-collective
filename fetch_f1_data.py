@@ -542,13 +542,21 @@ def fetch_and_store_drivers(conn, round_no, cookie):
                  value_change, value, to_float(p.get("NoNegativePoints"))),
             )
 
-            for sess in p.get("SessionWisePoints", []) or []:
+            sessions = [x for x in (p.get("SessionWisePoints", []) or []) if x.get("sessionnumber") is not None]
+            # A session has scored when either score is filled in. Since 21 Nov 2026 (Las Vegas)
+            # F1 can leave "points" blank for hours after a session while "nonegative_points"
+            # and the weekend total (GamedayPoints) are already there; going on "points" alone
+            # made the round look unstarted and its provisional points were removed.
+            scored = [x for x in sessions if x.get("points") is not None or x.get("nonegative_points") is not None]
+            for sess in sessions:
                 sn = sess.get("sessionnumber")
-                if sn is None:
-                    continue
                 info = session_info.setdefault(sn, {"type": sess.get("sessiontype"), "done": False})
-                if sess.get("points") is not None:
+                pts = sess.get("points")
+                if pts is not None or sess.get("nonegative_points") is not None:
                     info["done"] = True
+                    # Blank but only this session has scored: the weekend total is its score.
+                    if pts is None and len(scored) == 1:
+                        pts = p.get("GamedayPoints")
                 if sess.get("sessiontype"):
                     info["type"] = sess["sessiontype"]
 
@@ -556,7 +564,7 @@ def fetch_and_store_drivers(conn, round_no, cookie):
                     "INSERT INTO player_session_points (season, round, player_id, session_number, "
                     "session_type, points) VALUES (?,?,?,?,?,?) ON CONFLICT(season, round, player_id, "
                     "session_number) DO UPDATE SET session_type=excluded.session_type, points=excluded.points",
-                    (SEASON, round_no, pid, sn, sess.get("sessiontype"), to_float(sess.get("points"))),
+                    (SEASON, round_no, pid, sn, sess.get("sessiontype"), to_float(pts)),
                 )
 
         for sn, info in session_info.items():
