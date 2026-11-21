@@ -222,67 +222,95 @@ def read_tools_data(conn, season, race_name_by_round):
                      "prevRounds": [r for r in (T - 2, T - 1) if r >= 1], "assets": rows,
                      "src": sim_after.get(T) if any((T, a["id"]) in sims for a in rows) else None}
 
-    # ── Team Calculator: each manager's team going into the next deadline ───
-    # Before a round locks that's round T itself, starting from their T-1 team;
-    # once T is under way it's T+1, starting from their T team (at T's prices
-    # until F1 publishes the new ones).
-    calc = None
+    # ── Team Calculator: one entry per round it can plan (Tim, 21 Nov 2026) ──
+    # Before a round locks that's round T only, starting from each team's T-1
+    # line-up. Once T is under way there are two: T itself (still from T-1, with
+    # the team actually locked for T shown alongside) and T+1 (from the T team,
+    # at T's prices until F1 publishes the new ones). The Race menu picks one;
+    # it opens on T until T's race is over, then on T+1.
+    calcs, calc, calc_default = [], None, 0
     if predictor:
         T = predictor["r"]
-        target = T + 1 if predictor["live"] else T
-        start = target - 1
         price_now = {a["id"]: a["p"] for a in predictor["assets"]}
+        for a in predictor["assets"]:
+            a["ax"], a["an"] = a["xp"], a["xn"]   # the 12-race average, for the Simulation menu
         rr = {(r, mid): (bal, subs, made, cost) for r, mid, bal, subs, made, cost in conn.execute(
             "SELECT round, manager_id, team_balance, subs_allowed, transfers_made, extra_sub_cost "
             "FROM race_results WHERE season=?", (season,))}
+        caps = {(r, mid): (cap, mega) for r, mid, cap, mega in conn.execute(
+            "SELECT round, manager_id, captain_player_id, mega_captain_player_id FROM race_results WHERE season=?",
+            (season,))}
         used = {}
         for (mid, rnd), chip in chips.items():
             used.setdefault(mid, []).append(chip)
-        mgrs = []
-        for mid, name in managers.items():
-            s = start
-            if chips.get((mid, s)) == "LL":   # Limitless: the team goes back afterwards
-                s -= 1
-            picks = [pid for (pid,) in conn.execute(
+
+        def picks_of(rnd, mid):
+            return [pid for (pid,) in conn.execute(
                 "SELECT player_id FROM team_picks WHERE season=? AND round=? AND manager_id=? "
-                "ORDER BY position", (season, s, mid))]
-            if not picks or (s, mid) not in rr:
-                continue
-            bal, subs, made, cost = rr[(s, mid)]
-            if (target, mid) in rr and rr[(target, mid)][1] is not None:
-                free = rr[(target, mid)][1]
-            else:   # 2 a round, plus 1 carried over if any went unused
-                free = min(3, 2 + (1 if (subs or 0) - (made or 0) > 0 else 0))
-            mgrs.append({"m": name, "picks": picks, "bank": round(bal or 0.0, 1),
-                         "budget": round((bal or 0.0) + sum(price_now.get(p, 0.0) for p in picks), 1),
-                         "free": free, "cost": cost or 10.0, "used": sorted(used.get(mid, []))})
-        mgrs.sort(key=lambda m: m["m"])
-        # Expected points for the target round: the simulation's where it has
-        # run, otherwise the 12-race average already on each asset.
-        src = None
-        for a in predictor["assets"]:
-            s = sims.get((target, a["id"]))
-            a["ax"], a["an"] = a["xp"], a["xn"]   # the 12-race average, for the Simulation menu
-            if s:
-                a["xp"], a["xn"] = round(s[0], 1), round(s[1], 1)
-                src = sim_after.get(target)
-        # Every stage the simulation has saved for this round, oldest first,
-        # for the Simulation menu (the latest is what's shown by default).
-        stages = []
-        try:
-            got = {}
-            for after, pid, xp, xn, made in conn.execute(
-                    "SELECT after, player_id, xpts, xnn, made_at FROM sim_history WHERE season=? AND round=?",
-                    (season, target)):
-                s = got.setdefault(after, {"after": after, "made": made, "x": {}})
-                s["made"] = max(s["made"], made)
-                s["x"][pid] = [round(xp, 1), round(xn if xn is not None else max(0.0, xp), 1)]
-            order = ["pre", "fp1", "fp2", "fp3", "quali"]
-            stages = sorted(got.values(), key=lambda s: order.index(s["after"]) if s["after"] in order else 9)
-        except sqlite3.OperationalError:
-            pass
-        calc = {"r": target, "name": race_name_by_round.get(target, f"Round {target}"),
-                "pricesFrom": T, "managers": mgrs, "src": src, "sims": stages}
+                "ORDER BY position", (season, rnd, mid))]
+
+        def make(target):
+            start = target - 1
+            locked = target <= T and predictor["live"]
+            mgrs = []
+            for mid, name in managers.items():
+                s = start
+                if chips.get((mid, s)) == "LL":   # Limitless: the team goes back afterwards
+                    s -= 1
+                picks = picks_of(s, mid)
+                if not picks or (s, mid) not in rr:
+                    continue
+                bal, subs, made, cost = rr[(s, mid)]
+                if (target, mid) in rr and rr[(target, mid)][1] is not None:
+                    free = rr[(target, mid)][1]
+                else:   # 2 a round, plus 1 carried over if any went unused
+                    free = min(3, 2 + (1 if (subs or 0) - (made or 0) > 0 else 0))
+                m = {"m": name, "picks": picks, "bank": round(bal or 0.0, 1),
+                     "budget": round((bal or 0.0) + sum(price_now.get(p, 0.0) for p in picks), 1),
+                     "free": free, "cost": cost or 10.0, "used": sorted(used.get(mid, []))}
+                if locked:   # the team they actually locked in, and its boosts
+                    lk = picks_of(target, mid)
+                    if lk:
+                        cap, mega = caps.get((target, mid), (None, None))
+                        m["lock"], m["lockCap"], m["lockMega"] = lk, cap, mega
+                mgrs.append(m)
+            mgrs.sort(key=lambda m: m["m"])
+            src = sim_after.get(target) if any((target, a["id"]) in sims for a in predictor["assets"]) else None
+            # Every stage the simulation has saved for this round, oldest first,
+            # for the Simulation menu (the latest is what's shown by default).
+            stages = []
+            try:
+                got = {}
+                for after, pid, xp, xn, made_at in conn.execute(
+                        "SELECT after, player_id, xpts, xnn, made_at FROM sim_history WHERE season=? AND round=?",
+                        (season, target)):
+                    g = got.setdefault(after, {"after": after, "made": made_at, "x": {}})
+                    g["made"] = max(g["made"], made_at)
+                    g["x"][pid] = [round(xp, 1), round(xn if xn is not None else max(0.0, xp), 1)]
+                order = ["pre", "fp1", "fp2", "fp3", "quali"]
+                stages = sorted(got.values(), key=lambda g: order.index(g["after"]) if g["after"] in order else 9)
+            except sqlite3.OperationalError:
+                pass
+            return {"r": target, "name": race_name_by_round.get(target, f"Round {target}"), "locked": locked,
+                    "pricesFrom": T, "managers": mgrs, "src": src, "sims": stages}
+
+        if predictor["live"]:
+            calcs.append(make(T))
+            if conn.execute("SELECT 1 FROM hist_rounds WHERE season=? AND round=?", (season, T + 1)).fetchone():
+                calcs.append(make(T + 1))
+            # T's race is over once its result is in, or 2.5 hours after the start.
+            over = conn.execute("SELECT 1 FROM hist_results WHERE season=? AND round=? AND kind='race' LIMIT 1",
+                                (season, T)).fetchone() is not None
+            if not over:
+                row = conn.execute("SELECT race_utc FROM race_schedule WHERE season=? AND round=?",
+                                   (season, T)).fetchone()
+                if row and row[0]:
+                    from datetime import datetime, timedelta, timezone
+                    over = datetime.now(timezone.utc) > datetime.fromisoformat(row[0]) + timedelta(hours=2.5)
+            calc_default = 1 if over and len(calcs) > 1 else 0
+        else:
+            calcs.append(make(T))
+        calc = calcs[calc_default]
 
     colours = {k: [c, _ink(c)] for k, c in TEAM_COLOURS.items()}
     # ── Elite Data: the global top 500 (elite.py), next to the league ───────
@@ -382,7 +410,8 @@ def read_tools_data(conn, season, race_name_by_round):
     except sqlite3.OperationalError:
         pass
 
-    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "colours": colours, "elite": elite,
+    return {"hindsight": hindsight, "predictor": predictor, "calc": calc, "calcs": calcs,
+            "calcDefault": calc_default, "colours": colours, "elite": elite,
             "pen": pen_box, "wx": wx}
 
 
@@ -503,6 +532,7 @@ TOOLS_HTML = r"""
   <div id="tcHead"></div>
   <div class="tl-note" id="tlCNote"></div>
   <div class="tl-ctl">
+    <div style="grid-column:1/-1" id="tcRaceBox"><label>Race</label><select id="tcRace"></select></div>
     <div style="grid-column:1/-1"><label>Simulation</label><select id="tcSim"></select></div>
     <div><label>Manager</label><select id="tcMgr"></select></div>
     <div><label>Free transfers</label><select id="tcFree">
@@ -715,7 +745,10 @@ function teamTable(el,x){
     x.rerun();};}
 
 // ── Team calculator ────────────────────────────────────────────────────────
-const C=T.calc, PA=(T.predictor||{}).assets||[];
+// Race menu: the weekend under way (until its race is over) and the next one.
+const CALCS=T.calcs&&T.calcs.length?T.calcs:(T.calc?[T.calc]:[]);
+let C=CALCS[T.calcDefault||0]||null;
+const PA=(T.predictor||{}).assets||[];
 const CA=PA.map(a=>({id:a.id,c:a.c,t:a.t,k:a.k,p:a.p,x:a.xp,n:a.xn,d:a.xd}));
 const CById=Object.fromEntries(CA.map(a=>[a.id,a]));
 const cst={inc:new Set(),exc:new Set(),n:10,cap:null,panel:null,sort:'',dir:-1};
@@ -742,43 +775,60 @@ function runC(){
   const o={budget:parseFloat(cB.value)||100,chip:cC.value,inc:cst.inc,exc:cst.exc,n:cst.n,
     w:+cW.value,start,free:+cF.value,cost:m?m.cost:10,cap:cst.cap};
   const top=bestTeams(CA,o);
-  let cur=null;
-  if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);
-    const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
-    if(D.length===5&&Cn.length===2){const k=bestTeams(mine,{...o,cap:null,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0})[0];
-      if(k)cur={...k,cost:mine.reduce((a,b)=>a+b.p,0)};}}
+  // A locked weekend: their actual team and 2x (3x) for comparison; otherwise
+  // the team they'd keep, with the calculator's 2x.
+  const lk=!!(C.locked&&m&&m.lock);
+  const mine=m?(lk?m.lock:m.picks).map(id=>CById[id]).filter(Boolean):[];
+  let cur=null,curB=null,now=null,nowD=null;
+  if(m){const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
+    if(D.length===5&&Cn.length===2){
+      const cap=lk&&m.lockCap&&D.some(a=>a.id===m.lockCap)?m.lockCap:null;
+      const k=bestTeams(mine,{...o,cap,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0,start:lk?null:start})[0];
+      if(k){cur={...k,cost:mine.reduce((a,b)=>a+b.p,0)};now=k.pts;nowD=k.dp;}
+      if(lk&&cap){curB={};curB[cap]='x2';if(m.lockMega)curB[m.lockMega]='x3';}}}
   teamTable($('tcTeams'),{top,o,st:cst,assets:CA,start,byId:CById,dec:true,ptsLbl:'xPts',dLbl:'xΔ$',
-    pinKey:'uc-pin-c-'+C.r,cur,curLabel:m?`${m.m}'s team now`:'',rerun:()=>{cAssets();runC();}});
+    pinKey:'uc-pin-c-'+C.r,cur,curB,curLabel:m?(lk?`${m.m}'s locked team`:`${m.m}'s team now`):'',rerun:()=>{cAssets();runC();}});
   $('tcMore').style.display=top.length>=cst.n&&cst.n<50?'':'none';
-  if(m){const mine=m.picks.map(id=>CById[id]).filter(Boolean);const col=COL[m.m]||'#ccc';
-    const D=mine.filter(a=>a.t==='D'), Cn=mine.filter(a=>a.t==='C');
-    let now=null,nowD=null;
-    if(D.length===5&&Cn.length===2){const keep=bestTeams(mine,{...o,cap:null,budget:1e9,inc:new Set(),exc:new Set(),n:1,w:0});
-      if(keep[0]){now=keep[0].pts;nowD=keep[0].dp;}}
+  if(m){const col=COL[m.m]||'#ccc';
     const sd=v=>`${v>=0?'+':'−'}$${Math.abs(v).toFixed(1)}M`;
-    $('tcCur').innerHTML=`<span style="color:${col};font-weight:600">${m.m}</span>'s team for ${C.name}: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
+    $('tcCur').innerHTML=(lk?`<div style="margin-bottom:6px;color:#d9a441">Teams are locked for ${C.name}. This shows ${m.m}'s locked team against the best teams from their ${C.name} starting point.</div>`:'')+
+      `<span style="color:${col};font-weight:600">${m.m}</span>'s ${lk?'locked ':''}team for ${C.name}: ${now==null?'':`<b>${now.toFixed(1)}</b> xPts, <b class="${nowD>0.04?'tl-up':nowD<-0.04?'tl-dn':''}">${sd(nowD)}</b> expected price change, `}$${fmt(m.bank)}M in the bank, ${m.free} free transfer${m.free===1?'':'s'}.`+
       `<div style="margin-top:6px;color:#999">Green ring: the calculator's ${o.chip==='X3'?'3x and 2x picks':'2x pick'} for ${C.name}. Faded: already in ${m.m}'s team.</div>`+
       (top.length&&now!=null?`<div style="margin-top:6px;color:#999">Best team below: ${top[0].pts-now>=0?'+':''}${(top[0].pts-now).toFixed(1)} xPts and ${sd(top[0].dp-nowD)} price change on keeping this one, after any transfer penalty.</div>`:'');
   } else $('tcCur').innerHTML='';
 }
 // Simulation menu: each stage the simulation saved for this round (F1FT-style
 // "very early" before practice, then post FP1/FP2/FP3); the latest by default.
-const cS=$('tcSim'), SIMS=(C&&C.sims)||[], CAavg=Object.fromEntries(PA.map(a=>[a.id,[a.ax??a.xp,a.an??a.xn]]));
+const cS=$('tcSim'), cR=$('tcRace'), CAavg=Object.fromEntries(PA.map(a=>[a.id,[a.ax??a.xp,a.an??a.xn]]));
+let SIMS=[];
 function cSim(){const s=SIMS.find(x=>x.after===cS.value);
   CA.forEach(a=>{const v=s&&s.x[a.id]?s.x[a.id]:CAavg[a.id];a.x=v[0];a.n=v[1];});}
-if(C){
+const cHead=()=>{$('tcHead').innerHTML=head(C.r,C.name,(C.locked?'Locked · ':'Best teams for this race · ')+
+  (cS.value?`simulation ${SIMSTAGE[cS.value]||cS.value}`:'12-race average'));};
+// Load the chosen round into the calculator: its simulation runs, managers and note.
+function cLoad(){
+  SIMS=C.sims||[];
+  cS.innerHTML='';
   SIMS.slice().reverse().forEach(s=>cS.add(new Option(`${C.name} – ${SIMSTAGE[s.after]||s.after}`,s.after)));
   cS.add(new Option(`12-race average (no simulation)`,''));
   if(!SIMS.length)cS.value='';
-  const cHead=()=>{$('tcHead').innerHTML=head(C.r,C.name,'Best teams for this race · '+
-    (cS.value?`simulation ${SIMSTAGE[cS.value]||cS.value}`:'12-race average'));};
-  cS.onchange=()=>{cSim();cHead();cAssets();runC();};
+  const keep=cM.value||ucMe();cM.innerHTML='';
+  cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
+  if(C.managers.some(m=>m.m===keep))cM.value=keep;
+  cst.cap=null;cst.panel=null;
   cSim();cHead();
   $('tlCNote').innerHTML=`Ranked by expected points (xPts). Pick a manager to start from their team, budget and free transfers; extra transfers cost 10 pts each. ${SIMS.length?`xPts come from our race simulation: the weekend run 10,000 times from each car's qualifying and practice pace, how hard the track is to pass on, reliability and overtaking, scored with the F1 Fantasy rules. Pick a run under <b>Simulation</b>: <b>very early</b> is from past races only, before any practice; each later one adds that session from this weekend`:`xPts are each asset's average over its last 12 races, until the race simulation has run for this round`}${C.pricesFrom<C.r?`. Prices are today's (F1 publishes R${C.r} prices after R${C.pricesFrom})`:''}.`;
-  cM.add(new Option('— none —',''));C.managers.forEach(m=>cM.add(new Option(m.m,m.m)));
-  if(C.managers.some(m=>m.m===ucMe()))cM.value=ucMe();
+  cSetMgr();
 }
-cSetMgr();cAssets();runC();
+if(C){
+  CALCS.forEach((c,i)=>cR.add(new Option(`R${c.r} ${c.name}${c.locked?' (this weekend, locked)':i>0||CALCS.length>1?' (next)':''}`,i)));
+  cR.value=String(T.calcDefault||0);
+  $('tcRaceBox').style.display=CALCS.length>1?'':'none';
+  cR.onchange=()=>{C=CALCS[+cR.value];cLoad();cAssets();runC();};
+  cS.onchange=()=>{cSim();cHead();cAssets();runC();};
+  cLoad();
+} else $('tcRaceBox').style.display='none';
+cAssets();runC();
 cM.onchange=()=>{ucSetMe(cM.value);cSetMgr();runC();};
 [cF,cC,cW].forEach(e=>e.onchange=runC); cB.oninput=runC;
 $('tcMore').onclick=()=>{cst.n=Math.min(50,cst.n+10);runC();};
