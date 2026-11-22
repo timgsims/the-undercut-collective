@@ -759,6 +759,15 @@ def process_manager_round(conn, social_id, round_no, entry, budget_entry, is_fin
         # ovpoints is still the total before this weekend.
         gdpoints, is_provisional, is_final = provisional_pts, True, False
         season_total = season_total + gdpoints if season_total is not None else None
+    elif not is_final and provisional_pts is not None and provisional_pts != gdpoints:
+        # F1 stores each team's total in batches and can lag the drivers'
+        # points by hours: on 22 Nov 2026 (Las Vegas) it still had Tim on 127
+        # well after the race, while its app's team screen (driver points
+        # added up) said 306. Until the round is final, go with the points
+        # added up, as the app does; F1's own total takes over once final.
+        if season_total is not None:
+            season_total = season_total - gdpoints + provisional_pts
+        gdpoints, is_provisional = provisional_pts, True
 
     own_info    = entry.get("team_info") or {}
     budget_info = (budget_entry or {}).get("team_info") or {}
@@ -1049,7 +1058,11 @@ def main():
             if budget_err:
                 budget_entry = None
 
-            process_manager_round(conn, social_id, round_no, entry, budget_entry, round_no in final_rounds)
+            # Until a round is final, also add its points up from the drivers' (F1's
+            # stored team total can lag hours behind; see process_manager_round).
+            prov = None if round_no in final_rounds else provisional_points(conn, entry, round_no)
+            process_manager_round(conn, social_id, round_no, entry, budget_entry, round_no in final_rounds,
+                                  provisional_pts=prov)
 
         if prov_round and not fatal:
             # Other managers' teams can't be read until the round locks, which
