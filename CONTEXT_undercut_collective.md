@@ -337,8 +337,10 @@ Team Picks tab also shows each manager's locked-in team for the hidden weekend
 - **Grid penalties (2026-11-08, Tim):** `penalty_watch.py` runs at the top of every `run_pipeline.sh` run and
   decides for itself whether to search: once a day from 10am NZ in the 7 days before teams lock, every 3 hours
   in the last 48, never after the lock (after qualifying the sim uses OpenF1's official grid). It runs headless
-  Claude Code on Tim's Pro plan from `~/.f1-claude/` (binary and token copied from HomeBase's, so the token
-  expires with HomeBase's in Nov 2027: renew both together; HomeLab warns for HomeBase's). Sonnet with web
+  Claude Code on Tim's Pro plan from `~/.f1-claude/` (binary copied from HomeBase's; **its own one-year token
+  since 27 Nov 2026**, made by `ops/connect-claude.ps1`, which Claude runs in the desktop app's Terminal panel
+  and Tim only clicks Authorize; the same script renews it. HomeLab's To do warns 60 days before it ends, as
+  `f1-fantasy` in `APP_TOKENS`). Sonnet with web
   search, about $0.07 a run at API prices. Results go in `penalties` (`penalties.py`; `penalty_checks` logs each
   search and its cost; `secrets/penalty_watch.log`). Confirmed ones go into the sim's grid before qualifying
   (`sim.load_overrides`, `sim_overrides.json` still wins); expected ones are shown, not simulated. A change

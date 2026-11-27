@@ -5,9 +5,9 @@ search: in the week before teams lock, once a day (from 10am NZ), then every
 3 hours in the last 48 hours. It stops at the lock: after qualifying the sim
 uses OpenF1's official grid, which has every penalty in it.
 
-Claude (headless Claude Code on Tim's Pro plan, ~/.f1-claude, token copied
-from HomeBase's on 8 Nov 2026, so it expires with it: renew both
-together) searches the web and answers in JSON. A run
+Claude (headless Claude Code on Tim's Pro plan, ~/.f1-claude; its own
+one-year token since 27 Nov 2026, made with ops/connect-claude.ps1, which also
+renews it; HomeLab warns 60 days before it ends) searches the web and answers in JSON. A run
 costs about $0.07 at API prices, so ~10 a race week is a small slice of the
 Pro limits. New or changed penalties go in the `penalties` table
 (penalties.py) and leave secrets/force_full, so this run of the pipeline
@@ -150,7 +150,9 @@ def ask_claude(text):
 
 def alert(race, err, now):
     """Two failed searches in a row: tell Tim through HomeLab, once a day.
-    Usually the Claude token (copied from HomeBase's: renew both together)."""
+    Usually the Claude token (renew with ops/connect-claude.ps1) or Tim's Claude
+    subscription itself (27 Nov 2026: a missed payment turned Claude Code off for
+    six hours)."""
     mark = BASE / "secrets" / "penalty_watch_alerted"
     today = now.astimezone(NZ).date().isoformat()
     try:
